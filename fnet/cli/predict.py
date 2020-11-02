@@ -12,6 +12,7 @@ import numpy as np
 import pandas as pd
 import tifffile
 import torch
+from torch.utils.data import DataLoader
 
 from fnet.cli.init import save_default_predict_options
 from fnet.data import FnetDataset, TiffDataset
@@ -20,6 +21,9 @@ from fnet.transforms import norm_around_center
 from fnet.utils.general_utils import files_from_dir
 from fnet.utils.general_utils import retry_if_oserror
 from fnet.utils.general_utils import str_to_object
+
+from pytorch_toolbelt.inference.tiles import ImageSlicer, CudaTileMerger
+from pytorch_toolbelt.utils.torch_utils import tensor_from_mask_image, to_numpy
 
 
 logger = logging.getLogger(__name__)
@@ -132,7 +136,9 @@ def save_tif(fname: str, ar: np.ndarray, path_root: str) -> str:
         os.makedirs(path_tif_dir)
         logger.info(f"Created: {path_tif_dir}")
     path_save = os.path.join(path_tif_dir, fname)
-    tifffile.imsave(path_save, ar, compress=2)
+    # change compression level to default
+#     tifffile.imsave(path_save, ar, compress=2)
+    tifffile.imsave(path_save, ar, compress=6)
     logger.info(f"Saved: {path_save}")
     return os.path.relpath(path_save, path_root)
 
@@ -227,6 +233,40 @@ def load_from_json(args: argparse.Namespace) -> None:
     with args.json.open(mode="r") as fi:
         predict_options = json.load(fi)
     args.__dict__.update(predict_options)
+    
+def predict_on_zslice_tiles(model, zimage, tile_size=(512, 512), tile_step=(256, 256)):
+    
+    image = zimage[0,0,:,:]
+    print(f'Stack shape:{zimage.shape}')
+    print(f'Slice shape:{image.shape}')
+    
+    # Cut large image into overlapping tiles
+    tiler = ImageSlicer(image.shape, tile_size=(512, 512), tile_step=(256, 256))
+    
+    print(tiler.crops)
+
+    # HCW -> CHW. Optionally, do normalization here
+    tiles = [tensor_from_mask_image(tile) for tile in tiler.split(image)]
+
+    # Allocate a CUDA buffer for holding entire mask
+    merger = CudaTileMerger(tiler.target_shape, 1, tiler.weight)
+
+    # Run predictions for tiles and accumulate them
+    for tiles_batch, coords_batch in DataLoader(list(zip(tiles, tiler.crops)),
+                                                batch_size=1, pin_memory=True):
+#         for x, y, tile_width, tile_height in coords_batch:
+#             tile = image[y : y + tile_height, x : x + tile_width].copy()
+        tiles_batch = tiles_batch.float().cuda()
+        pred_batch = model(tiles_batch)
+
+        merger.integrate_batch(pred_batch, coords_batch)
+    
+    # Normalize accumulated mask and convert back to numpy
+#     merged_mask = np.moveaxis(to_numpy(merger.merge()), 0, -1).astype(np.uint8)
+    merged_mask = np.moveaxis(to_numpy(merger.merge()), 0, -1)
+    merged_mask = tiler.crop_to_orignal_size(merged_mask)
+    
+    return merged_mask
 
 
 def add_parser_arguments(parser) -> None:
@@ -301,6 +341,15 @@ def main(args: Optional[argparse.Namespace] = None) -> None:
             prediction = model.predict_piecewise(
                 signal, tta=("no_tta" not in model_def["options"])
             )
+#             signal = to_numpy(signal)
+#             print(signal.shape)
+#             print(signal.shape[1])
+            
+#             network = model.net
+#             network.eval()
+#             with torch.no_grad():
+#                 prediction = predict_on_zslice_tiles(network, signal)
+
             evaluation = metric(target, prediction)
             entry[args.metric + f'.{model_def["name"]}'] = evaluation
             if not args.no_prediction:

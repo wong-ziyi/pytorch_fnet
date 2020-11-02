@@ -15,6 +15,7 @@ def main() -> None:
     """Main function for command-line 'fnet' command."""
     init_fnet_logging()
     parser = argparse.ArgumentParser(prog="fnet")
+    parser.set_defaults(func=lambda args: parser.print_help())
     subparser = parser.add_subparsers(title="command")
     parser_init = subparser.add_parser(
         "init",

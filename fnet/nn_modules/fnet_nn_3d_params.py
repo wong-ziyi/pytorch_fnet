@@ -64,6 +64,7 @@ class _Net_recurse(torch.nn.Module):
         if self.depth == 0:
             return self.sub_2conv_more(x)
         else:  # depth > 0
+            # number of slices must match that in training data or 32??
             x_2conv_more = self.sub_2conv_more(x)
             x_conv_down = self.conv_down(x_2conv_more)
             x_bn0 = self.bn0(x_conv_down)
