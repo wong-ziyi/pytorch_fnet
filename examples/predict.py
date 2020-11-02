@@ -20,7 +20,7 @@ model_save_dir = "{}/model/".format(os.getcwd())
 data_save_path_test = "{}/image_list_test.csv".format(os.getcwd())
 
 command_str = (
-    "fnet predict "
+    "python ../fnet/cli/predict.py "
     "--path_model_dir {} "
     "--dataset fnet.data.MultiChTiffDataset "
     '--dataset_kwargs \'{{"path_csv": "{}"}}\' '

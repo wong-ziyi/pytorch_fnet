@@ -51,6 +51,8 @@ aics_pipeline = quilt3.Package.browse(
 
 data_manifest = aics_pipeline["metadata.csv"]()
 
+data_manifest.to_csv('metadata.csv')
+
 # THE ROWS OF THE MANIFEST CORRESPOND TO CELLS, WE TRIM DOWN TO UNIQUIE FOVS
 unique_fov_indices = np.unique(data_manifest['FOVId'], return_index=True)[1]
 data_manifest = data_manifest.iloc[unique_fov_indices]
@@ -82,10 +84,9 @@ for image_source_path, image_target_path in zip(image_source_paths, image_target
 df = pd.DataFrame(columns=["path_tiff", "channel_signal", "channel_target"])
 
 df["path_tiff"] = image_target_paths
-df["channel_signal"] = data_manifest["ChannelNumberBrightfield"]
-df["channel_target"] = data_manifest[
-    "ChannelNumber405"
-]  # this is the DNA channel for all FOVs
+df["channel_signal"] = data_manifest["ChannelNumberBrightfield"].tolist()
+# this is the DNA channel for all FOVs
+df["channel_target"] = data_manifest["ChannelNumber405"].tolist()
 
 n_train_images = int(n_images_to_download * train_fraction)
 df_train = df[:n_train_images]
