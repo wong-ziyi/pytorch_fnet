@@ -116,4 +116,4 @@ data/*/
 !data/csvs/
 data/csvs/*/
 .vscode
-
+*.tiff
