@@ -54,3 +54,32 @@ class WeightedMSE(torch.nn.Module):
             return torch.nn.functional.mse_loss(y_hat_batch, y_batch)
         dim = tuple(range(1, len(weight_map_batch.size())))
         return (weight_map_batch * (y_hat_batch - y_batch) ** 2).sum(dim=dim).mean()
+    
+    
+class HuberLoss(torch.nn.Module):
+    """Huber loss."""
+
+    def forward(
+        self,
+        y_hat_batch: torch.Tensor,
+        y_batch: torch.Tensor,
+        weight_map_batch: Optional[torch.Tensor] = None,
+        delta: float = 1.0
+    ):
+        """Calculates Huber loss.
+
+        Parameters
+        ----------
+        y_hat_batch
+            Batched prediction.
+        y_batch
+            Batched target.
+        weight_map_batch
+            Optional weight map.
+        delta
+            Threshold at which to change between delta-scaled L1 and L2 loss.
+        """
+        if weight_map_batch is None:
+            return (delta ** 2 * (torch.sqrt(1 + ((y_hat_batch - y_batch) / delta) ** 2) - 1)).mean()
+        dim = tuple(range(1, len(weight_map_batch.size())))
+        return (weight_map_batch * (delta ** 2 * (torch.sqrt(1 + ((y_hat_batch - y_batch) / delta) ** 2) - 1))).sum(dim=dim).mean()
