@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Optional, Tuple
 import logging
 
 import numpy as np
@@ -374,6 +374,7 @@ def norm_around_center(ar: np.ndarray, z_center: Optional[int] = None):
 
 def norm_min_max(
         ar: np.ndarray,
+        q: Tuple[float,float] = (0.1, 99.9),
         z_center: Optional[int] = None,
 ):
     """Returns normalized version of input array.
@@ -401,8 +402,6 @@ def norm_min_max(
         )
 
     ar = ar.astype(np.float32)
-
-    norm_min = ar.min()
-    norm_max = ar.max()
-    ar = 2*(ar - norm_min) / (norm_max - norm_min)-1
+    norm_min, norm_max = np.percentile(ar, q=q)
+    ar = (ar - norm_min) / (norm_max - norm_min)
     return ar.astype(np.float32)
