@@ -1,6 +1,5 @@
 """Generates predictions from a model."""
 
-
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
 import argparse
@@ -108,6 +107,15 @@ def item_from_dataset(
             target = item[1]
     else:
         signal = item
+        
+    # crop to the nearest size divisible by 16
+    if signal.shape[2] % 16 != 0:
+        signal = signal[:,:,signal.shape[2]%16//2:0-signal.shape[2]%16//2,:]
+        target = target[:,:,target.shape[2]%16//2:0-target.shape[2]%16//2,:]
+    if signal.shape[3] % 16 != 0:
+        signal = signal[:,:,:,signal.shape[3]%16//2:0-signal.shape[3]%16//2]
+        target = target[:,:,:,target.shape[3]%16//2:0-target.shape[3]%16//2]
+        
     return (signal, target)
 
 
