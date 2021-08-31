@@ -95,6 +95,7 @@ class Model:
         self.weight_decay = weight_decay
 
         self.count_iter = 0
+        self.best_loss_val = float("inf")
         self.device = (
             torch.device("cuda", self.gpu_ids[0])
             if self.gpu_ids[0] >= 0
@@ -139,6 +140,7 @@ class Model:
             f"*** {self.__class__.__name__} ***",
             f"{self.nn_class}(**{self.nn_kwargs})",
             f"iter: {self.count_iter}",
+            f"best loss val: {self.best_loss_val}",
             f"gpu: {self.gpu_ids}",
         ]
         return os.linesep.join(out_str)
@@ -151,6 +153,7 @@ class Model:
             "nn_state": self.net.state_dict(),
             "optimizer_state": self.optimizer.state_dict(),
             "count_iter": self.count_iter,
+            "best_loss_val": self.best_loss_val,
         }
 
     def to_gpu(self, gpu_ids: Union[int, List[int]]) -> None:
@@ -194,6 +197,8 @@ class Model:
 
     def load_state(self, state: dict, no_optim: bool = False):
         self.count_iter = state["count_iter"]
+        if "best_loss_val" in state:
+            self.best_loss_val = state["best_loss_val"]
         self.net.load_state_dict(state["nn_state"])
         if no_optim:
             self.optimizer = None

@@ -139,18 +139,28 @@ def main(args: Optional[argparse.Namespace] = None):
 
         loss_train = model.train_on_batch(*bpds_train.get_batch(args.batch_size))
         loss_val = None
+        
         if do_save and bpds_val is not None:
             loss_val = model.test_on_iterator(
                 [bpds_val.get_batch(args.batch_size) for _ in range(4)]
             )
+            if loss_val < model.best_loss_val:
+                print(f'New loss val {loss_val:.6f} is lower than previous best loss val {model.best_loss_val:.6f}')
+                model.best_loss_val = loss_val
+                path_best_loss_val = os.path.join(
+                    args.path_save_dir, "best_loss_val_model", f"model_{idx_iter + 1:06d}.p"
+                )
+                model.save(path_best_loss_val)
+                logger.info(f"Saved best val loss model: {path_best_loss_val}")
 
         fnetlogger.add(
             {"num_iter": idx_iter + 1, "loss_train": loss_train, "loss_val": loss_val}
         )
         print(
             f'iter: {fnetlogger.data["num_iter"][-1]:6d} | '
-            f'loss_train: {fnetlogger.data["loss_train"][-1]:.4f}'
+            f'loss_train: {fnetlogger.data["loss_train"][-1]:.6f}'
         )
+        
         if do_save:
             model.save(path_model)
             fnetlogger.to_csv(path_losses_csv)
