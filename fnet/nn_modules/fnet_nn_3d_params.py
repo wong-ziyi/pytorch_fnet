@@ -57,12 +57,12 @@ class _Net_recurse(torch.nn.Module):
                 n_out_channels, n_out_channels, 2, stride=2
             )
             self.bn0 = torch.nn.BatchNorm3d(n_out_channels)
-            self.relu0 = torch.nn.ReLU()
+            self.relu0 = torch.nn.ReLU(inplace=True)
             self.convt = torch.nn.ConvTranspose3d(
                 2 * n_out_channels, n_out_channels, kernel_size=2, stride=2
             )
             self.bn1 = torch.nn.BatchNorm3d(n_out_channels)
-            self.relu1 = torch.nn.ReLU()
+            self.relu1 = torch.nn.ReLU(inplace=True)
             self.sub_u = _Net_recurse(n_out_channels, mult_chan=2, depth_parent=depth_parent, depth=(depth - 1))
 
     def forward(self, x):
@@ -88,10 +88,10 @@ class SubNet2Conv(torch.nn.Module):
         super().__init__()
         self.conv1 = torch.nn.Conv3d(n_in, n_out, kernel_size=3, padding=1)
         self.bn1 = torch.nn.BatchNorm3d(n_out)
-        self.relu1 = torch.nn.ReLU()
+        self.relu1 = torch.nn.ReLU(inplace=True)
         self.conv2 = torch.nn.Conv3d(n_out, n_out, kernel_size=3, padding=1)
         self.bn2 = torch.nn.BatchNorm3d(n_out)
-        self.relu2 = torch.nn.ReLU()
+        self.relu2 = torch.nn.ReLU(inplace=True)
 
     def forward(self, x):
         x = self.conv1(x)
