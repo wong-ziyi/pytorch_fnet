@@ -82,4 +82,73 @@ class HuberLoss(torch.nn.Module):
         if weight_map_batch is None:
             return (delta ** 2 * (torch.sqrt(1 + ((y_hat_batch - y_batch) / delta) ** 2) - 1)).mean()
         dim = tuple(range(1, len(weight_map_batch.size())))
+        # weight map should sum up to 1.0 across all pixels in each image
         return (weight_map_batch * (delta ** 2 * (torch.sqrt(1 + ((y_hat_batch - y_batch) / delta) ** 2) - 1))).sum(dim=dim).mean()
+    
+    
+class SpectralLoss(torch.nn.Module):
+    """Spectral loss."""
+
+    def forward(
+        self,
+        y_hat_batch: torch.Tensor,
+        y_batch: torch.Tensor,
+        weight_map_batch: Optional[torch.Tensor] = None
+    ):
+        """Calculates MSE of magnitudes in Fourier space.
+
+        Parameters
+        ----------
+        y_hat_batch
+            Batched prediction.
+        y_batch
+            Batched target.
+        weight_map_batch
+            Optional weight map.
+        """
+        dim = tuple(range(1, len(y_batch.size())))
+        
+        y_hat_fft_mag_batch = torch.fft.rfftn(y_hat_batch, dim=dim).abs()
+        y_fft_mag_batch = torch.fft.rfftn(y_batch, dim=dim).abs()
+        
+        if weight_map_batch is None:
+            return torch.nn.functional.mse_loss(y_hat_fft_mag_batch, y_fft_mag_batch)
+        dim = tuple(range(1, len(weight_map_batch.size())))
+        return (weight_map_batch * (y_hat_batch - y_batch) ** 2).sum(dim=dim).mean()
+
+    
+class SpectralMSE(torch.nn.Module):
+    """Spectral and pixel MSE combined loss."""
+
+    def forward(
+        self,
+        y_hat_batch: torch.Tensor,
+        y_batch: torch.Tensor,
+        weight_map_batch: Optional[torch.Tensor] = None,
+        alpha: float = 0.5
+    ):
+        """Calculates MSEs of images and of their magnitudes in Fourier space.
+
+        Parameters
+        ----------
+        y_hat_batch
+            Batched prediction.
+        y_batch
+            Batched target.
+        weight_map_batch
+            Optional weight map.
+        alpha
+            Weight of spectral loss in the comination with MSE.
+        """
+        dim = tuple(range(1, len(y_batch.size())))
+        
+        y_hat_fft_mag_batch = torch.fft.rfftn(y_hat_batch, dim=dim).abs()
+        y_fft_mag_batch = torch.fft.rfftn(y_batch, dim=dim).abs()
+        spectral_loss = torch.nn.functional.mse_loss(y_hat_fft_mag_batch, y_fft_mag_batch)
+        
+        if weight_map_batch is None:
+            mse_loss = torch.nn.functional.mse_loss(y_hat_batch, y_batch)
+        else:
+            mse_loss = (weight_map_batch * (y_hat_batch - y_batch) ** 2).sum(dim=dim).mean()
+
+        return (1 - alpha) * mse_loss + alpha * spectral_loss
