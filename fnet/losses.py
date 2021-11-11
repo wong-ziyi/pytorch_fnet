@@ -164,7 +164,7 @@ class JaccardBCE(torch.nn.Module):
         y_batch: torch.Tensor,
         weight_map_batch: Optional[torch.Tensor] = None,
         threshold = 0.005,
-        alpha: float = 0.3
+        alpha: float = 0.5
     ):
         """Calculate loss defined as alpha * BCE - (1 - alpha) * log (SoftJaccard).
 
@@ -184,7 +184,7 @@ class JaccardBCE(torch.nn.Module):
         eps = 1e-15
         
         bin_y_batch = (y_batch >= threshold).float()
-        soft_y_hat_batch = F.sigmoid(y_hat_batch)
+        soft_y_hat_batch = torch.sigmoid(y_hat_batch)
 
         intersection = (soft_y_hat_batch * bin_y_batch).sum()
         union = soft_y_hat_batch.sum() + bin_y_batch.sum()
