@@ -4,13 +4,14 @@
 from typing import Optional
 
 import torch
+from torch.nn import functional as F
 
 
 class HeteroscedasticLoss(torch.nn.Module):
     """Loss function to capture heteroscedastic aleatoric uncertainty."""
 
     def forward(self, y_hat_batch: torch.Tensor, y_batch: torch.Tensor):
-        """Calculates loss.
+        """Calculate loss.
 
         Parameters
         ----------
@@ -38,7 +39,7 @@ class WeightedMSE(torch.nn.Module):
         y_batch: torch.Tensor,
         weight_map_batch: Optional[torch.Tensor] = None,
     ):
-        """Calculates weighted MSE.
+        """Calculate weighted MSE.
 
         Parameters
         ----------
@@ -51,7 +52,7 @@ class WeightedMSE(torch.nn.Module):
 
         """
         if weight_map_batch is None:
-            return torch.nn.functional.mse_loss(y_hat_batch, y_batch)
+            return F.mse_loss(y_hat_batch, y_batch)
         dim = tuple(range(1, len(weight_map_batch.size())))
         return (weight_map_batch * (y_hat_batch - y_batch) ** 2).sum(dim=dim).mean()
     
@@ -66,7 +67,7 @@ class HuberLoss(torch.nn.Module):
         weight_map_batch: Optional[torch.Tensor] = None,
         delta: float = 1.0
     ):
-        """Calculates Huber loss.
+        """Calculate Huber loss.
 
         Parameters
         ----------
@@ -95,7 +96,7 @@ class SpectralLoss(torch.nn.Module):
         y_batch: torch.Tensor,
         weight_map_batch: Optional[torch.Tensor] = None
     ):
-        """Calculates MSE of magnitudes in Fourier space.
+        """Calculate MSE of magnitudes in Fourier space.
 
         Parameters
         ----------
@@ -112,7 +113,7 @@ class SpectralLoss(torch.nn.Module):
         y_fft_mag_batch = torch.fft.rfftn(y_batch, dim=dim).abs()
         
         if weight_map_batch is None:
-            return torch.nn.functional.mse_loss(y_hat_fft_mag_batch, y_fft_mag_batch)
+            return F.mse_loss(y_hat_fft_mag_batch, y_fft_mag_batch)
         dim = tuple(range(1, len(weight_map_batch.size())))
         return (weight_map_batch * (y_hat_batch - y_batch) ** 2).sum(dim=dim).mean()
 
@@ -125,9 +126,9 @@ class SpectralMSE(torch.nn.Module):
         y_hat_batch: torch.Tensor,
         y_batch: torch.Tensor,
         weight_map_batch: Optional[torch.Tensor] = None,
-        alpha: float = 0.5
+        alpha: float = 0.2
     ):
-        """Calculates MSEs of images and of their magnitudes in Fourier space.
+        """Calculate MSEs of images and of their magnitudes in Fourier space.
 
         Parameters
         ----------
@@ -144,11 +145,51 @@ class SpectralMSE(torch.nn.Module):
         
         y_hat_fft_mag_batch = torch.fft.rfftn(y_hat_batch, dim=dim).abs()
         y_fft_mag_batch = torch.fft.rfftn(y_batch, dim=dim).abs()
-        spectral_loss = torch.nn.functional.mse_loss(y_hat_fft_mag_batch, y_fft_mag_batch)
+        spectral_loss = F.mse_loss(y_hat_fft_mag_batch, y_fft_mag_batch)
         
         if weight_map_batch is None:
-            mse_loss = torch.nn.functional.mse_loss(y_hat_batch, y_batch)
+            mse_loss = F.mse_loss(y_hat_batch, y_batch)
         else:
             mse_loss = (weight_map_batch * (y_hat_batch - y_batch) ** 2).sum(dim=dim).mean()
 
         return (1 - alpha) * mse_loss + alpha * spectral_loss
+    
+    
+class JaccardBCE(torch.nn.Module):
+    """Segmentation loss based on patch thresholding."""
+
+    def forward(
+        self,
+        y_hat_batch: torch.Tensor,
+        y_batch: torch.Tensor,
+        weight_map_batch: Optional[torch.Tensor] = None,
+        threshold = 0.005,
+        alpha: float = 0.3
+    ):
+        """Calculate loss defined as alpha * BCE - (1 - alpha) * log (SoftJaccard).
+
+        Parameters
+        ----------
+        y_hat_batch
+            Batched prediction.
+        y_batch
+            Batched target.
+        weight_map_batch
+            Optional weight map.
+        threshold
+            Threshold Value for binarizing intensity target images.
+        alpha
+            Weight of spectral loss in the comination with MSE.
+        """
+        eps = 1e-15
+        
+        bin_y_batch = (y_batch >= threshold).float()
+        soft_y_hat_batch = F.sigmoid(y_hat_batch)
+
+        intersection = (soft_y_hat_batch * bin_y_batch).sum()
+        union = soft_y_hat_batch.sum() + bin_y_batch.sum()
+        soft_jaccard = intersection / (union - intersection + eps)
+        
+        bce = F.binary_cross_entropy_with_logits(soft_y_hat_batch, bin_y_batch)
+        
+        return (1 - alpha) * bce - alpha * torch.log(soft_jaccard)
