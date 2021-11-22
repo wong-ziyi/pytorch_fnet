@@ -76,6 +76,7 @@ class Model:
         self,
         betas=(0.5, 0.999),
         criterion_class="fnet.losses.WeightedMSE",
+        metric="fnet.metrics.corr_coef",
         init_weights=True,
         lr=0.001,
         nn_class="fnet.nn_modules.fnet_nn_3d.Net",
@@ -86,6 +87,7 @@ class Model:
     ):
         self.betas = betas
         self.criterion = str_to_object(criterion_class)()
+        self.metric = str_to_object(metric)
         self.gpu_ids = [gpu_ids] if isinstance(gpu_ids, int) else gpu_ids
         self.init_weights = init_weights
         self.lr = lr
@@ -384,13 +386,15 @@ class Model:
         y_hat_batch = self.predict_on_batch(x_batch)
 
         args = [y_hat_batch, y_batch]
+        
+        metric = self.metric(*args)
 
         if weight_map_batch is not None:
             args.append(weight_map_batch)
 
         loss = self.criterion(*args)
 
-        return loss.item()
+        return loss.item(), metric
 
     def test_on_iterator(self, iterator: Iterator, **kwargs: dict) -> float:
         """Test model on iterator which has items to be passed to
@@ -410,9 +414,12 @@ class Model:
 
         """
         loss_sum = 0
+        metric_sum = 0
         for item in iterator:
-            loss_sum += self.test_on_batch(*item, **kwargs)
-        return loss_sum / len(iterator)
+            loss_item, metric_item = self.test_on_batch(*item, **kwargs)
+            loss_sum += loss_item
+            metric_sum += metric_item
+        return loss_sum / len(iterator), metric_sum / len(iterator)
 
     def evaluate(
         self,

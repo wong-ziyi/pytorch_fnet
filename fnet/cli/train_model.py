@@ -121,7 +121,7 @@ def main(args: Optional[argparse.Namespace] = None):
         fnetlogger = fnet.FnetLogger(path_losses_csv)
         logger.info(f"History loaded from: {path_losses_csv}")
     else:
-        fnetlogger = fnet.FnetLogger(columns=["num_iter", "loss_train", "loss_val"])
+        fnetlogger = fnet.FnetLogger(columns=["num_iter", "loss_train", "loss_val", "metric_val"])
 
     if (args.n_iter - model.count_iter) <= 0:
         # Stop if no more iterations needed
@@ -139,9 +139,10 @@ def main(args: Optional[argparse.Namespace] = None):
 
         loss_train = model.train_on_batch(*bpds_train.get_batch(args.batch_size))
         loss_val = None
+        metric_val = None
         
         if do_save and bpds_val is not None:
-            loss_val = model.test_on_iterator(
+            loss_val, metric_val = model.test_on_iterator(
                 [bpds_val.get_batch(args.batch_size) for _ in range(4)]
             )
             if loss_val < model.best_loss_val:
@@ -154,7 +155,7 @@ def main(args: Optional[argparse.Namespace] = None):
                 logger.info(f"Saved best val loss model: {path_best_loss_val}")
 
         fnetlogger.add(
-            {"num_iter": idx_iter + 1, "loss_train": loss_train, "loss_val": loss_val}
+            {"num_iter": idx_iter + 1, "loss_train": loss_train, "loss_val": loss_val, "metric_val": metric_val}
         )
         print(
             f'iter: {fnetlogger.data["num_iter"][-1]:6d} | '
