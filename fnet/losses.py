@@ -190,7 +190,7 @@ class JaccardBCE(torch.nn.Module):
         union = soft_y_hat_batch.sum() + bin_y_batch.sum()
         soft_jaccard = intersection / (union - intersection + eps)
         
-        bce = F.binary_cross_entropy_with_logits(soft_y_hat_batch, bin_y_batch)
+        bce = F.binary_cross_entropy_with_logits(y_hat_batch, bin_y_batch)
         
         return (1 - alpha) * bce - alpha * torch.log(soft_jaccard)
 
@@ -234,5 +234,48 @@ class JaccardMSE(torch.nn.Module):
             mse_loss = F.mse_loss(y_hat_batch, y_batch)
         else:
             mse_loss = (weight_map_batch * (y_hat_batch - y_batch) ** 2).sum(dim=dim).mean()
+        
+        return (1 - alpha) * mse_loss - alpha * torch.log(soft_jaccard)
+
+    
+class JaccardSoftMSE(torch.nn.Module):
+    """Combination loss based on pixel-MSE and IoU with patch thresholding."""
+
+    def forward(
+        self,
+        y_hat_batch: torch.Tensor,
+        y_batch: torch.Tensor,
+        weight_map_batch: Optional[torch.Tensor] = None,
+        threshold = 0.005,
+        alpha: float = 0.5
+    ):
+        """Calculate loss defined as alpha * MSE - (1 - alpha) * log (SoftJaccard).
+
+        Parameters
+        ----------
+        y_hat_batch
+            Batched prediction.
+        y_batch
+            Batched target.
+        weight_map_batch
+            Optional weight map.
+        threshold
+            Threshold Value for binarizing intensity target images.
+        alpha
+            Weight of spectral loss in the comination with MSE.
+        """
+        eps = 1e-15
+        
+        bin_y_batch = (y_batch >= threshold).float()
+        soft_y_hat_batch = torch.sigmoid(y_hat_batch)
+
+        intersection = (soft_y_hat_batch * bin_y_batch).sum()
+        union = soft_y_hat_batch.sum() + bin_y_batch.sum()
+        soft_jaccard = intersection / (union - intersection + eps)
+        
+        if weight_map_batch is None:
+            mse_loss = F.mse_loss(soft_y_hat_batch, y_batch)
+        else:
+            mse_loss = (weight_map_batch * (soft_y_hat_batch - y_batch) ** 2).sum(dim=dim).mean()
         
         return (1 - alpha) * mse_loss - alpha * torch.log(soft_jaccard)
