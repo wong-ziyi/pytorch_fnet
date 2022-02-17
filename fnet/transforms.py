@@ -374,12 +374,12 @@ def norm_around_center(ar: np.ndarray, z_center: Optional[int] = None):
 
 def norm_min_max(
         ar: np.ndarray,
-        q: Tuple[float,float] = (0.1, 99.9),
+        q: Tuple[float,float] = (0.0, 99.9),
         z_center: Optional[int] = None,
 ):
     """Returns normalized version of input array.
 
-    The array will be normalized from [min, max] to [-1, 1] linearly
+    The array will be normalized from [min, max] to [0, 1] linearly
 
     Parameters
     ----------
@@ -404,4 +404,35 @@ def norm_min_max(
     ar = ar.astype(np.float32)
     norm_min, norm_max = np.percentile(ar, q=q)
     ar = (ar - norm_min) / (norm_max - norm_min)
+    return ar.astype(np.float32)
+
+
+def z_score(
+        ar: np.ndarray,
+):
+    """Returns normalized version of input array.
+
+    The array will be normalized by subtracting the mean and dividing by std
+
+    Parameters
+    ----------
+    ar
+        Input 3d array to be normalized.
+
+    Returns
+    -------
+    np.ndarray
+       Nomralized array, dtype = float32
+
+    """
+    if ar.ndim != 3:
+        raise ValueError('Input array must be 3d')
+    if ar.shape[0] < 32:
+        raise ValueError(
+            'Input array must be at least length 32 in first dimension'
+        )
+
+    ar = ar.astype(np.float32)
+    ar -= ar.mean()
+    ar /= ar.std()
     return ar.astype(np.float32)
