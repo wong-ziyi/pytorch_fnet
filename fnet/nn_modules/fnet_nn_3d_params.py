@@ -2,24 +2,43 @@ import torch
 
 
 class Net(torch.nn.Module):
-    def __init__(self, depth=4, mult_chan=32, dilate=1, in_channels=1, out_channels=1):
+    def __init__(self, depth=4, mult_chan=32, dilate=1, mtl=False, in_channels=1, out_channels=1):
         super().__init__()
         self.depth = depth
         self.mult_chan = mult_chan
         self.dilate = dilate
+        self.mtl = mtl
         self.in_channels = in_channels
         self.out_channels = out_channels
 
         self.net_recurse = _Net_recurse(
             n_in_channels=self.in_channels, mult_chan=self.mult_chan, depth_parent=self.depth, depth=self.depth, dilate = self.dilate
         )
-        self.conv_out = torch.nn.Conv3d(
-            self.mult_chan, self.out_channels, kernel_size=3, padding=1
-        )
+
+        if not mtl:
+            self.conv_out = torch.nn.Conv3d(
+                self.mult_chan, self.out_channels, kernel_size=3, padding=1
+            )
+        else:
+            self.conv_mtl = torch.nn.Conv3d(
+                self.mult_chan, self.mult_chan * self.depth, kernel_size=3, padding=1
+            )
+            self.out_pix = torch.nn.Conv3d(
+                self.mult_chan * self.depth, self.out_channels, kernel_size=1
+            )
+            self.out_mask = torch.nn.Conv3d(
+                self.mult_chan * self.depth, self.out_channels, kernel_size=1
+            )
 
     def forward(self, x):
         x_rec = self.net_recurse(x)
-        return self.conv_out(x_rec)
+
+        if not self.mtl:
+            out = self.conv_out(x_rec)
+        else:
+            out_mtl = self.conv_mtl(x_rec)
+            out = (self.out_pix(out_mtl), self.out_mask(out_mtl))
+        return out
 
 
 class _Net_recurse(torch.nn.Module):

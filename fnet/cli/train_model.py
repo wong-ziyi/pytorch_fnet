@@ -121,7 +121,7 @@ def main(args: Optional[argparse.Namespace] = None):
         fnetlogger = fnet.FnetLogger(path_losses_csv)
         logger.info(f"History loaded from: {path_losses_csv}")
     else:
-        fnetlogger = fnet.FnetLogger(columns=["num_iter", "loss_train", "loss_val", "metric_val"])
+        fnetlogger = fnet.FnetLogger(columns=["num_iter", "loss_train", "loss_val", "metrics_val"])
 
     if (args.n_iter - model.count_iter) <= 0:
         # Stop if no more iterations needed
@@ -131,6 +131,9 @@ def main(args: Optional[argparse.Namespace] = None):
     bpds_train = get_bpds_train(args)
     bpds_val = get_bpds_val(args)
 
+    loss_val = None
+    metrics_val = None
+
     # MAIN LOOP
     for idx_iter in range(model.count_iter, args.n_iter):
         do_save = ((idx_iter + 1) % args.interval_save == 0) or (
@@ -138,12 +141,14 @@ def main(args: Optional[argparse.Namespace] = None):
         )
 
         loss_train = model.train_on_batch(*bpds_train.get_batch(args.batch_size))
-        loss_val = None
-        metric_val = None
-        
+
         if do_save and bpds_val is not None:
-            loss_val, metric_val = model.test_on_iterator(
+            loss_val, metrics_val = model.test_on_iterator(
                 [bpds_val.get_batch(args.batch_size) for _ in range(4)]
+            )
+            print(
+                f'loss_val: {fnetlogger.data["loss_val"][-1]} | '
+                f'metrics_val: {fnetlogger.data["metrics_val"][-1]}'
             )
             if loss_val < model.best_loss_val:
                 print(f'New loss val {loss_val:.6f} is lower than previous best loss val {model.best_loss_val:.6f}')
@@ -155,13 +160,13 @@ def main(args: Optional[argparse.Namespace] = None):
                 logger.info(f"Saved best val loss model: {path_best_loss_val}")
 
         fnetlogger.add(
-            {"num_iter": idx_iter + 1, "loss_train": loss_train, "loss_val": loss_val, "metric_val": metric_val}
+            {"num_iter": idx_iter + 1, "loss_train": loss_train, "loss_val": loss_val, "metrics_val": metrics_val}
         )
         print(
             f'iter: {fnetlogger.data["num_iter"][-1]:6d} | '
             f'loss_train: {fnetlogger.data["loss_train"][-1]:.6f}'
         )
-        
+
         if do_save:
             model.save(path_model)
             fnetlogger.to_csv(path_losses_csv)

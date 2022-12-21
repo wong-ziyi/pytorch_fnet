@@ -12,7 +12,7 @@ import numpy as np
 import tifffile
 import torch
 
-from fnet.metrics import corr_coef
+from fnet.metrics import corr_coef, dice
 from fnet.predict_piecewise import predict_piecewise as _predict_piecewise_fn
 from fnet.transforms import flip_y, flip_x, norm_around_center
 from fnet.utils.general_utils import get_args, retry_if_oserror, str_to_object
@@ -76,7 +76,7 @@ class Model:
         self,
         betas=(0.5, 0.999),
         criterion_class="fnet.losses.WeightedMSE",
-        metric="fnet.metrics.corr_coef",
+        metrics=["fnet.metrics.corr_coef", "fnet.metrics.dice"],
         init_weights=True,
         lr=0.001,
         nn_class="fnet.nn_modules.fnet_nn_3d.Net",
@@ -87,7 +87,7 @@ class Model:
     ):
         self.betas = betas
         self.criterion = str_to_object(criterion_class)()
-        self.metric = str_to_object(metric)
+        self.metrics = [str_to_object(metric) for metric in metrics]
         self.gpu_ids = [gpu_ids] if isinstance(gpu_ids, int) else gpu_ids
         self.init_weights = init_weights
         self.lr = lr
@@ -242,6 +242,7 @@ class Model:
 
         self.optimizer.zero_grad()
         y_hat_batch = module(x_batch)
+
         args = [y_hat_batch, y_batch]
         if weight_map_batch is not None:
             args.append(weight_map_batch.to(dtype=torch.float32, device=self.device))
@@ -253,6 +254,7 @@ class Model:
 
     def _predict_on_batch_tta(self, x_batch: torch.Tensor) -> torch.Tensor:
         """Performs model prediction using test-time augmentation."""
+        # TODO: re-implement using an extra dimension for multiple outputs
         augs = [None, [flip_y], [flip_x], [flip_y, flip_x]]
         x_batch = x_batch.numpy()
         y_hat_batch_mean = None
@@ -261,17 +263,19 @@ class Model:
             if aug is not None:
                 for trans in aug:
                     x_batch_aug = trans(x_batch_aug)
-            y_hat_batch = self.predict_on_batch(x_batch_aug.copy()).numpy()
+            y_hat_batch = self.predict_on_batch(x_batch_aug.copy())
+            y_hat_batch = [y.numpy() for y in y_hat_batch] # won't work for non-mtl model
             if aug is not None:
                 for trans in aug:
-                    y_hat_batch = trans(y_hat_batch)
+                    y_hat_batch = [trans(y) for y in y_hat_batch]
             if y_hat_batch_mean is None:
-                y_hat_batch_mean = np.zeros(y_hat_batch.shape, dtype=np.float32)
-            y_hat_batch_mean += y_hat_batch
-        y_hat_batch_mean /= len(augs)
-        return torch.tensor(
-            y_hat_batch_mean, dtype=torch.float32, device=torch.device("cpu")
-        )
+                y_hat_batch_mean = [np.zeros(y.shape, dtype=np.float32) for y in y_hat_batch]
+            y_hat_batch_mean = [np.add(*x) for x in zip(y_hat_batch_mean, y_hat_batch)]
+
+        y_hat_batch_mean = [torch.tensor(
+            y/len(augs), dtype=torch.float32, device=torch.device("cpu")
+        ) for y in y_hat_batch_mean]
+        return y_hat_batch_mean
 
     def predict_on_batch(self, x_batch: torch.Tensor) -> torch.Tensor:
         """Performs model prediction on a batch of data.
@@ -296,7 +300,8 @@ class Model:
 
         network.eval()
         with torch.no_grad():
-            y_hat_batch = network(x_batch).cpu()
+            y_hat_batch = network(x_batch)
+            y_hat_batch = [y.cpu() for y in y_hat_batch] # won't work for single output (non-mtl)
 
         network.train()
 
@@ -325,8 +330,10 @@ class Model:
         """
         x_batch = torch.unsqueeze(torch.tensor(x), 0)
         if tta:
-            return self._predict_on_batch_tta(x_batch).squeeze(0)
-        return self.predict_on_batch(x_batch).squeeze(0)
+            preds_tta = self._predict_on_batch_tta(x_batch)
+            return [pred for pred in preds_tta]
+        preds = self.predict_on_batch(x_batch)
+        return [pred for pred in preds]
 
     def predict_piecewise(
         self, x: Union[torch.Tensor, np.ndarray], **predict_kwargs
@@ -385,16 +392,15 @@ class Model:
 
         y_hat_batch = self.predict_on_batch(x_batch)
 
-        args = [y_hat_batch, y_batch]
-        
-        metric = self.metric(*args)
+        metrics = [metric(y_hat_batch[i], y_batch) for i, metric in enumerate(self.metrics)]
 
+        args = [y_hat_batch, y_batch]
         if weight_map_batch is not None:
             args.append(weight_map_batch)
 
         loss = self.criterion(*args)
 
-        return loss.item(), metric
+        return loss.item(), metrics
 
     def test_on_iterator(self, iterator: Iterator, **kwargs: dict) -> float:
         """Test model on iterator which has items to be passed to
@@ -414,12 +420,12 @@ class Model:
 
         """
         loss_sum = 0
-        metric_sum = 0
+        metrics_sum = np.zeros(len(self.metrics))
         for item in iterator:
-            loss_item, metric_item = self.test_on_batch(*item, **kwargs)
+            loss_item, metrics_item = self.test_on_batch(*item, **kwargs)
             loss_sum += loss_item
-            metric_sum += metric_item
-        return loss_sum / len(iterator), metric_sum / len(iterator)
+            metrics_sum += metrics_item
+        return loss_sum / len(iterator), metrics_sum / len(iterator)
 
     def evaluate(
         self,

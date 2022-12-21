@@ -39,6 +39,37 @@ def corr_coef(
     cc = np.mean((a - mean_a) * (b - mean_b)) / (std_a * std_b)
     return cc
 
+def dice(
+    a: torch.Tensor, b: torch.Tensor
+) -> float:
+    """Calculates Dice between the inputs.
+
+    Parameters
+    ----------
+    a
+        First input.
+    b
+        Second input.
+
+    Returns
+    -------
+    float
+        Dice coefficient between the inputs.
+
+    """
+    eps = 1e-7
+
+    dice_target = b.view(-1).contiguous().float()
+    dice_output = (a > 0.5).view(-1).contiguous().float()
+    dim=(-1,)
+
+    intersection = torch.sum(dice_output * dice_target, dim=dim)
+    union = torch.sum(dice_output, dim=dim) + torch.sum(dice_target, dim=dim) + eps
+    if union.sum().item() < 64:
+        return 0
+    loss = (1 - (2 * intersection + eps) / union)
+    return 1 - loss.mean()
+
 
 def corr_coef_chan0(
     a: Union[np.ndarray, torch.Tensor], b: Union[np.ndarray, torch.Tensor]

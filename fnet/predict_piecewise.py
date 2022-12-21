@@ -25,9 +25,10 @@ def _predict_piecewise_recurse(
 ):
     """Performs piecewise prediction recursively."""
     if tuple(ar_in.shape[1:]) == tuple(dims_max[1:]):
-        ar_out = predictor.predict(ar_in, **predict_kwargs).numpy().astype(np.float32)
-        ar_weight = _get_weights(ar_out.shape)
-        return ar_out * ar_weight, ar_weight
+        ar_out = predictor.predict(ar_in, **predict_kwargs)
+        ar_out = [ar.numpy().astype(np.float32) for ar in ar_out]
+        ar_weights = [_get_weights(ar.shape) for ar in ar_out]
+        return [(ar * ar_weight, ar_weight) for (ar, ar_weight) in zip(ar_out, ar_weights)]
     dim = None
     # Find first dim where input > max
     for idx_d in range(1, ar_in.ndim):
@@ -46,21 +47,24 @@ def _predict_piecewise_recurse(
         slices[dim] = slice(offset, end)
         slices = tuple(slices)
         ar_in_sub = ar_in[slices]
-        pred_sub, pred_weight_sub = _predict_piecewise_recurse(
+        preds = _predict_piecewise_recurse(
             predictor, ar_in_sub, dims_max, overlaps, **predict_kwargs
         )
-        if ar_out is None or ar_weight is None:
-            shape_out[0] = pred_sub.shape[0]  # Set channel dim for output
-            ar_out = np.zeros(shape_out, dtype=pred_sub.dtype)
-            ar_weight = np.zeros(shape_out, dtype=pred_weight_sub.dtype)
-        ar_out[slices] += pred_sub
-        ar_weight[slices] += pred_weight_sub
-        offset += dims_max[dim] - overlaps[dim]
-        if end == ar_in.shape[dim]:
-            done = True
-        elif offset + dims_max[dim] > ar_in.shape[dim]:
-            offset = ar_in.shape[dim] - dims_max[dim]
-    return ar_out, ar_weight
+        preds_out = []
+        for (pred_sub, pred_weight_sub) in preds:
+            if ar_out is None or ar_weight is None:
+                shape_out[0] = pred_sub.shape[0]  # Set channel dim for output
+                ar_out = np.zeros(shape_out, dtype=pred_sub.dtype)
+                ar_weight = np.zeros(shape_out, dtype=pred_weight_sub.dtype)
+            ar_out[slices] += pred_sub
+            ar_weight[slices] += pred_weight_sub
+            offset += dims_max[dim] - overlaps[dim]
+            if end == ar_in.shape[dim]:
+                done = True
+            elif offset + dims_max[dim] > ar_in.shape[dim]:
+                offset = ar_in.shape[dim] - dims_max[dim]
+            preds_out += (ar_out, ar_weight)
+    return preds_out
 
 
 def predict_piecewise(
@@ -108,12 +112,15 @@ def predict_piecewise(
     dims_max[0] = None
     overlaps[0] = None
     ar_in = tensor_in.numpy()
-    ar_out, ar_weight = _predict_piecewise_recurse(
+    preds = _predict_piecewise_recurse(
         predictor, ar_in, dims_max=dims_max, overlaps=overlaps, **predict_kwargs
     )
     # tifffile.imsave('debug/ar_sum.tif', ar_out)
-    mask = ar_weight > 0.0
-    ar_out[mask] = ar_out[mask] / ar_weight[mask]
+    out = []
+    for (ar_out, ar_weight) in preds:
+        mask = ar_weight > 0.0
+        ar_out[mask] = ar_out[mask] / ar_weight[mask]
+        out += torch.tensor(ar_out)
     # tifffile.imsave('debug/ar_weight.tif', ar_weight)
     # tifffile.imsave('debug/ar_out.tif', ar_out)
-    return torch.tensor(ar_out)
+    return out

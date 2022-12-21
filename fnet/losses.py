@@ -265,17 +265,65 @@ class JaccardSoftMSE(torch.nn.Module):
             Weight of spectral loss in the comination with MSE.
         """
         eps = 1e-15
-        
+
         bin_y_batch = (y_batch >= threshold).float()
         soft_y_hat_batch = torch.sigmoid(y_hat_batch)
 
         intersection = (soft_y_hat_batch * bin_y_batch).sum()
         union = soft_y_hat_batch.sum() + bin_y_batch.sum()
         soft_jaccard = intersection / (union - intersection + eps)
-        
+
         if weight_map_batch is None:
             mse_loss = F.mse_loss(soft_y_hat_batch, y_batch)
         else:
             mse_loss = (weight_map_batch * (soft_y_hat_batch - y_batch) ** 2).sum(dim=dim).mean()
-        
+
         return (1 - alpha) * mse_loss - alpha * torch.log(soft_jaccard)
+
+
+class MTLLoss(torch.nn.Module):
+    """Combination loss based on pixel-MSE and IoU with patch thresholding."""
+
+    def forward(
+        self,
+        y_hat_batch_mtl, # tuple of tensors: (predicted pixel values, predicted probability map)
+        y_batch: torch.Tensor,
+        weight_map_batch: Optional[torch.Tensor] = None,
+        threshold = 0.1,
+        alpha: float = 0.5
+    ):
+        """Calculate loss defined as alpha * MSE - (1 - alpha) * log (SoftJaccard).
+
+        Parameters
+        ----------
+        y_hat_batch
+            Batched prediction.
+        y_batch
+            Batched target.
+        weight_map_batch
+            Optional weight map.
+        threshold
+            Threshold Value for binarizing intensity target images.
+        alpha
+            Weight of spectral loss in the comination with MSE.
+        """
+        eps = 1e-15
+
+        y_hat_batch, bin_y_hat_batch = y_hat_batch_mtl
+
+        # threshold input image
+        bin_y_batch = (y_batch >= threshold).float()
+        bin_y_hat_batch = torch.sigmoid(bin_y_hat_batch)
+
+        intersection = (bin_y_hat_batch * bin_y_batch).sum()
+        union = bin_y_hat_batch.sum() + bin_y_batch.sum()
+        soft_jaccard = 1 - intersection / (union - intersection + eps)
+
+        if weight_map_batch is None:
+            mse_loss = F.mse_loss(y_hat_batch, y_batch)
+        else:
+            mse_loss = (weight_map_batch * (y_hat_batch - y_batch) ** 2).sum(dim=dim).mean()
+
+        # segmentation only
+        # return (1 - alpha) * mse_loss + alpha * soft_jaccard
+        return soft_jaccard
