@@ -146,7 +146,7 @@ def save_tif(fname: str, ar: np.ndarray, path_root: str) -> str:
     path_save = os.path.join(path_tif_dir, fname)
     # change compression level to default
 #     tifffile.imsave(path_save, ar, compress=2)
-    tifffile.imsave(path_save, ar, compress=6)
+    tifffile.imsave(path_save, ar)
     logger.info(f"Saved: {path_save}")
     return os.path.relpath(path_save, path_root)
 
