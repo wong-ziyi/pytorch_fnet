@@ -60,7 +60,7 @@ requirements = [
     "torch>=1.0",
     "tqdm",
     "scikit-image>=0.18.0",
-    "aicsimageio==4.0.5",
+    "aicsimageio==4.8.0",
 ]
 
 extra_requirements = {
