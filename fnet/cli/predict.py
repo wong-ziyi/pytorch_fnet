@@ -107,7 +107,7 @@ def item_from_dataset(
             target = item[1]
     else:
         signal = item
-        
+
     # crop to the nearest size divisible by 16
     if signal.shape[2] % 16 != 0:
         signal = signal[:,:,signal.shape[2]%16//2:0-signal.shape[2]%16//2,:]
@@ -115,7 +115,7 @@ def item_from_dataset(
     if signal.shape[3] % 16 != 0:
         signal = signal[:,:,:,signal.shape[3]%16//2:0-signal.shape[3]%16//2]
         target = target[:,:,:,target.shape[3]%16//2:0-target.shape[3]%16//2]
-        
+
     return (signal, target)
 
 
@@ -146,7 +146,7 @@ def save_tif(fname: str, ar: np.ndarray, path_root: str) -> str:
     path_save = os.path.join(path_tif_dir, fname)
     # change compression level to default
 #     tifffile.imsave(path_save, ar, compress=2)
-    tifffile.imsave(path_save, ar, compress=6)
+    tifffile.imsave(path_save, ar)
     logger.info(f"Saved: {path_save}")
     return os.path.relpath(path_save, path_root)
 
@@ -241,16 +241,16 @@ def load_from_json(args: argparse.Namespace) -> None:
     with args.json.open(mode="r") as fi:
         predict_options = json.load(fi)
     args.__dict__.update(predict_options)
-    
+
 def predict_on_zslice_tiles(model, zimage, tile_size=(512, 512), tile_step=(256, 256)):
-    
+
     image = zimage[0,0,:,:]
     print(f'Stack shape:{zimage.shape}')
     print(f'Slice shape:{image.shape}')
-    
+
     # Cut large image into overlapping tiles
     tiler = ImageSlicer(image.shape, tile_size=(512, 512), tile_step=(256, 256))
-    
+
     print(tiler.crops)
 
     # HCW -> CHW. Optionally, do normalization here
@@ -268,12 +268,12 @@ def predict_on_zslice_tiles(model, zimage, tile_size=(512, 512), tile_step=(256,
         pred_batch = model(tiles_batch)
 
         merger.integrate_batch(pred_batch, coords_batch)
-    
+
     # Normalize accumulated mask and convert back to numpy
 #     merged_mask = np.moveaxis(to_numpy(merger.merge()), 0, -1).astype(np.uint8)
     merged_mask = np.moveaxis(to_numpy(merger.merge()), 0, -1)
     merged_mask = tiler.crop_to_orignal_size(merged_mask)
-    
+
     return merged_mask
 
 
@@ -289,7 +289,7 @@ def add_parser_arguments(parser) -> None:
     )
     parser.add_argument("--json", type=Path, help="path to prediction options json")
     parser.add_argument(
-        "--metric", default="fnet.metrics.corr_coef", help="evaluation metric"
+        "--metrics", default="fnet.metrics.corr_coef", help="evaluation metrics"
     )
     parser.add_argument(
         "--n_images", type=int, default=-1, help="max number of images to test"
@@ -322,7 +322,7 @@ def main(args: Optional[argparse.Namespace] = None) -> None:
         save_default_predict_options(args.json)
         return
     load_from_json(args)
-    metric = str_to_object(args.metric)
+    metrics = [str_to_object(metric) for metric in args.metrics]
     dataset = get_dataset(args)
     entries = []
     model = None
@@ -346,27 +346,31 @@ def main(args: Optional[argparse.Namespace] = None) -> None:
                 model = load_model(model_def["path"], no_optim=True)
                 model.to_gpu(args.gpu_ids)
                 logger.info(f'Loaded model: {model_def["name"]}')
-            prediction = model.predict_piecewise(
+
+            predictions = model.predict_piecewise(
                 signal, tta=("no_tta" not in model_def["options"])
             )
 #             signal = to_numpy(signal)
 #             print(signal.shape)
 #             print(signal.shape[1])
-            
+
 #             network = model.net
 #             network.eval()
 #             with torch.no_grad():
-#                 prediction = predict_on_zslice_tiles(network, signal)
+#                 prediction = predict_on_zslice_tiexles(network, signal)
 
-            evaluation = metric(target, prediction)
-            entry[args.metric + f'.{model_def["name"]}'] = evaluation
+
+            for i, metric in enumerate(metrics):
+                evaluation = metric(target, predictions[i])
+                entry[args.metrics[i] + f'.{model_def["name"]}'] = evaluation
             if not args.no_prediction:
-                for idx_c in range(prediction.size()[0]):
-                    tag = f'prediction_c{idx_c}.{model_def["name"]}'
-                    pred_c = prediction.numpy()[idx_c,]
-                    entry[f"path_{tag}"] = save_tif(
-                        f"{idx}_{tag}.tif", pred_c, args.path_save_dir
-                    )
+                for idx_p, prediction in enumerate(predictions):
+                    for idx_c in range(prediction.size()[0]):
+                        tag = f'prediction_c{idx_c}.{model_def["name"]}'
+                        pred_c = prediction.numpy()[idx_c,]
+                        entry[f"path_{tag}"] = save_tif(
+                            f"{idx}_{tag}_{idx_p}.tif", pred_c, args.path_save_dir
+                        )
         entries.append(entry)
         save_predictions_csv(
             path_csv=os.path.join(args.path_save_dir, "predictions.csv"),
