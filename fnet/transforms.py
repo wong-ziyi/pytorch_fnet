@@ -375,11 +375,11 @@ def norm_around_center(ar: np.ndarray, z_center: Optional[int] = None):
 def norm_min_max(
         ar: np.ndarray,
         q: Tuple[float,float] = (0.0, 99.9),
-        z_center: Optional[int] = None,
+        zero_center: bool = False,
 ):
     """Returns normalized version of input array.
 
-    The array will be normalized from [min, max] to [0, 1] linearly
+    The array will be normalized from [min, max] to [0, 1] or [-1, 1] linearly
 
     Parameters
     ----------
@@ -403,7 +403,10 @@ def norm_min_max(
 
     ar = ar.astype(np.float32)
     norm_min, norm_max = np.percentile(ar, q=q)
-    ar = (ar - norm_min) / (norm_max - norm_min)
+    if zero_center:
+        ar = 2 * (ar - norm_min) / (norm_max - norm_min) - 1
+    else:
+        ar = (ar - norm_min) / (norm_max - norm_min)
     return ar.astype(np.float32)
 
 
