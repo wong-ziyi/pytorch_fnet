@@ -76,6 +76,7 @@ class Model:
         self,
         betas=(0.5, 0.999),
         criterion_class="fnet.losses.WeightedMSE",
+        criterion_kwargs={},
         metric="fnet.metrics.corr_coef",
         init_weights=True,
         lr=0.001,
@@ -86,7 +87,7 @@ class Model:
         gpu_ids=-1,
     ):
         self.betas = betas
-        self.criterion = str_to_object(criterion_class)()
+        self.criterion = str_to_object(criterion_class)(**criterion_kwargs)
         self.metric = str_to_object(metric)
         self.gpu_ids = [gpu_ids] if isinstance(gpu_ids, int) else gpu_ids
         self.init_weights = init_weights
@@ -261,7 +262,8 @@ class Model:
             if aug is not None:
                 for trans in aug:
                     x_batch_aug = trans(x_batch_aug)
-            y_hat_batch = self.predict_on_batch(x_batch_aug.copy()).numpy()
+            # TODO: make transforms device-agnostic
+            y_hat_batch = self.predict_on_batch(x_batch_aug.copy()).cpu().numpy()
             if aug is not None:
                 for trans in aug:
                     y_hat_batch = trans(y_hat_batch)
@@ -287,6 +289,7 @@ class Model:
             Batch of model predictions.
 
         """
+        # TODO: check why copying a batch is necessary
         x_batch = torch.tensor(x_batch, dtype=torch.float32, device=self.device)
 
         if len(self.gpu_ids) > 1:
@@ -296,7 +299,7 @@ class Model:
 
         network.eval()
         with torch.no_grad():
-            y_hat_batch = network(x_batch).cpu()
+            y_hat_batch = network(x_batch)
 
         network.train()
 
@@ -325,8 +328,8 @@ class Model:
         """
         x_batch = torch.unsqueeze(torch.tensor(x), 0)
         if tta:
-            return self._predict_on_batch_tta(x_batch).squeeze(0)
-        return self.predict_on_batch(x_batch).squeeze(0)
+            return self._predict_on_batch_tta(x_batch).cpu().squeeze(0)
+        return self.predict_on_batch(x_batch).cpu().squeeze(0)
 
     def predict_piecewise(
         self, x: Union[torch.Tensor, np.ndarray], **predict_kwargs
@@ -382,17 +385,18 @@ class Model:
             Loss as evaluated by self.criterion.
 
         """
-
+        y_batch = y_batch.to(dtype=torch.float32, device=self.device)
         y_hat_batch = self.predict_on_batch(x_batch)
 
         args = [y_hat_batch, y_batch]
-        
-        metric = self.metric(*args)
 
         if weight_map_batch is not None:
             args.append(weight_map_batch)
 
-        loss = self.criterion(*args)
+        loss = self.criterion(*args).cpu()
+
+        args = [arg.cpu() for arg in args]
+        metric = self.metric(*args)
 
         return loss.item(), metric
 

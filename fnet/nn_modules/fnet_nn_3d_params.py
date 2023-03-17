@@ -102,7 +102,7 @@ class SubNet2Conv(torch.nn.Module):
         x = self.relu2(x)
         return x
 
-    
+
 class DilatedBottleneck(torch.nn.Module):
     def __init__(self, n_in, n_out, depth=4):
         super().__init__()
