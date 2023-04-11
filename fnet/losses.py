@@ -7,6 +7,8 @@ import tifffile
 import torch
 from torch.nn import functional as F
 
+from fft_conv_pytorch import fft_conv
+
 
 class HeteroscedasticLoss(torch.nn.Module):
     """Loss function to capture heteroscedastic aleatoric uncertainty."""
@@ -300,7 +302,7 @@ class PSFMSE(torch.nn.Module):
         psf = tifffile.imread(psf_path)
 
         # calculate padding
-        padding = (psf.shape[0] // 2, psf.shape[1] // 2, psf.shape[2] // 2)
+        padding = ((psf.shape[0] - 1) // 2, (psf.shape[1] - 1) // 2, (psf.shape[2] - 1) // 2)
         self.padding = tuple(x for x in reversed(padding) for _ in range(2))
 
         # normalize psf
@@ -325,7 +327,7 @@ class PSFMSE(torch.nn.Module):
             Optional weight map.
         """
         # convolve with PSF
-        y_hat_batch = F.conv3d(F.pad(y_hat_batch, self.padding, "reflect"), self.psf)
+        y_hat_batch = fft_conv(F.pad(y_hat_batch, self.padding, "reflect"), self.psf)
 
         # TODO: exclude border voxels from loss calculation
         if weight_map_batch is None:
