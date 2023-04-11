@@ -24,6 +24,7 @@ from fnet.utils.general_utils import str_to_object
 from pytorch_toolbelt.inference.tiles import ImageSlicer, CudaTileMerger
 from pytorch_toolbelt.utils.torch_utils import tensor_from_mask_image, to_numpy
 
+torch.backends.cudnn.enabled = True
 
 logger = logging.getLogger(__name__)
 

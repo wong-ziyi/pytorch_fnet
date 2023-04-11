@@ -61,6 +61,7 @@ def save_options_json(path_save: Path, options: Dict) -> None:
 
 def save_default_train_options(path_save: Path) -> None:
     """Save default training options json.
+    See https://github.com/AllenCellModeling/pytorch_fnet/blob/release_1/train_model.py
 
     Parameters
     ----------
@@ -69,9 +70,9 @@ def save_default_train_options(path_save: Path) -> None:
 
     """
     train_options = {
-        "batch_size": 28,
+        "batch_size": 24,
         "bpds_kwargs": {
-            "buffer_size": 16,
+            "buffer_size": 30,
             "buffer_switch_interval": 2800,  # every 100 updates
             "patch_shape": [32, 64, 64],
         },
@@ -81,8 +82,8 @@ def save_default_train_options(path_save: Path) -> None:
             "col_index": "some_id_col",
             "col_signal": "some_signal_col",
             "col_target": "some_target_col",
-            "transform_signal": ["fnet.transforms.norm_around_center"],
-            "transform_target": ["fnet.transforms.norm_around_center"],
+            "transform_signal": ["fnet.transforms.normalize"],
+            "transform_target": ["fnet.transforms.normalize"],
         },
         "dataset_val": None,
         "dataset_val_kwargs": {},
@@ -96,7 +97,7 @@ def save_default_train_options(path_save: Path) -> None:
             "scheduler": None,
         },
         "interval_checkpoint": 50000,
-        "interval_save": 1000,
+        "interval_save": 500,
         "iter_checkpoint": [],
         "n_iter": 50000,
         "path_save_dir": str(path_save.parent),
@@ -121,8 +122,8 @@ def save_default_predict_options(path_save: Path) -> None:
             "col_signal": "some_signal_col",
             "col_target": "some_target_col",
             "path_csv": "some_test_set.csv",
-            "transform_signal": ["fnet.transforms.norm_around_center"],
-            "transform_target": ["fnet.transforms.norm_around_center"],
+            "transform_signal": ["fnet.transforms.normalize"],
+            "transform_target": ["fnet.transforms.normalize"],
         },
         "gpu_ids": 0,
         "idx_sel": None,
