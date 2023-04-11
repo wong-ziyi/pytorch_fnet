@@ -24,6 +24,7 @@ from fnet.utils.general_utils import str_to_object
 from pytorch_toolbelt.inference.tiles import ImageSlicer, CudaTileMerger
 from pytorch_toolbelt.utils.torch_utils import tensor_from_mask_image, to_numpy
 
+torch.backends.cudnn.enabled = True
 
 logger = logging.getLogger(__name__)
 
@@ -107,7 +108,7 @@ def item_from_dataset(
             target = item[1]
     else:
         signal = item
-        
+
     # crop to the nearest size divisible by 16
     if signal.shape[2] % 16 != 0:
         signal = signal[:,:,signal.shape[2]%16//2:0-signal.shape[2]%16//2,:]
@@ -115,7 +116,7 @@ def item_from_dataset(
     if signal.shape[3] % 16 != 0:
         signal = signal[:,:,:,signal.shape[3]%16//2:0-signal.shape[3]%16//2]
         target = target[:,:,:,target.shape[3]%16//2:0-target.shape[3]%16//2]
-        
+
     return (signal, target)
 
 
@@ -241,16 +242,16 @@ def load_from_json(args: argparse.Namespace) -> None:
     with args.json.open(mode="r") as fi:
         predict_options = json.load(fi)
     args.__dict__.update(predict_options)
-    
+
 def predict_on_zslice_tiles(model, zimage, tile_size=(512, 512), tile_step=(256, 256)):
-    
+
     image = zimage[0,0,:,:]
     print(f'Stack shape:{zimage.shape}')
     print(f'Slice shape:{image.shape}')
-    
+
     # Cut large image into overlapping tiles
     tiler = ImageSlicer(image.shape, tile_size=(512, 512), tile_step=(256, 256))
-    
+
     print(tiler.crops)
 
     # HCW -> CHW. Optionally, do normalization here
@@ -268,12 +269,12 @@ def predict_on_zslice_tiles(model, zimage, tile_size=(512, 512), tile_step=(256,
         pred_batch = model(tiles_batch)
 
         merger.integrate_batch(pred_batch, coords_batch)
-    
+
     # Normalize accumulated mask and convert back to numpy
 #     merged_mask = np.moveaxis(to_numpy(merger.merge()), 0, -1).astype(np.uint8)
     merged_mask = np.moveaxis(to_numpy(merger.merge()), 0, -1)
     merged_mask = tiler.crop_to_orignal_size(merged_mask)
-    
+
     return merged_mask
 
 
@@ -352,7 +353,7 @@ def main(args: Optional[argparse.Namespace] = None) -> None:
 #             signal = to_numpy(signal)
 #             print(signal.shape)
 #             print(signal.shape[1])
-            
+
 #             network = model.net
 #             network.eval()
 #             with torch.no_grad():
