@@ -58,14 +58,14 @@ class MultiChTiffDataset(FnetDataset):
         has_target = not np.any(np.isnan(element["channel_target"]))
 
         # aicsimageio.imread loads as STCZYX, so we load only CZYX
-        with AICSImage(element["path_tiff"]) as img:
-            im_tmp = img.get_image_data("CZYX", S=0, T=0)
+        img = AICSImage(element["path_tiff"])
+        img = img.get_image_data("CZYX", S=0, T=0)
 
         im_out = list()
-        im_out.append(im_tmp[element["channel_signal"]])
+        im_out.append(img[element["channel_signal"]])
 
         if has_target:
-            im_out.append(im_tmp[element["channel_target"]])
+            im_out.append(img[element["channel_target"]])
 
         if self.transform_signal is not None:
             for t in self.transform_signal:
