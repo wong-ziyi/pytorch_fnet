@@ -111,9 +111,17 @@ prefs["n_iter"] = args.n_iterations
 prefs["interval_checkpoint"] = args.interval_checkpoint
 
 prefs["dataset_train"] = "fnet.data.MultiChTiffDataset"
-prefs["dataset_train_kwargs"] = {"path_csv": data_save_path_train}
+prefs["dataset_train_kwargs"] = {
+    "path_csv": data_save_path_train,
+    "transform_signal": ["fnet.transforms.normalize"],
+    "transform_target": ["fnet.transforms.normalize"],
+    }
 prefs["dataset_val"] = "fnet.data.MultiChTiffDataset"
-prefs["dataset_val_kwargs"] = {"path_csv": data_save_path_test}
+prefs["dataset_val_kwargs"] = {
+    "path_csv": data_save_path_test,
+    "transform_signal": ["fnet.transforms.normalize"],
+    "transform_target": ["fnet.transforms.normalize"],
+    }
 
 # This Fnet call will be updated as a python API becomes available
 
