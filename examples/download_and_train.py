@@ -32,7 +32,7 @@ args = parser.parse_args()
 
 gpu_id = args.gpu_id
 n_images_to_download = args.n_imgs  # more images the better
-train_fraction = 0.75
+train_fraction = 0.6 # see Supplementary Table 1
 
 image_save_dir = "{}/".format(os.getcwd())
 model_save_dir = "{}/model/".format(os.getcwd())
