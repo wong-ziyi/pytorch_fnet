@@ -1,4 +1,5 @@
 import os
+import json
 import argparse
 
 ###################################################
@@ -19,12 +20,18 @@ model_save_dir = "{}/model/".format(os.getcwd())
 
 data_save_path_test = "{}/image_list_test.csv".format(os.getcwd())
 
+dataset_kwargs = {
+    "path_csv": data_save_path_test,
+    "transform_signal": ["fnet.transforms.normalize"],
+    "transform_target": ["fnet.transforms.normalize"],
+}
+
 command_str = (
-    "python ../fnet/cli/predict.py "
-    "--path_model_dir {} "
-    "--dataset fnet.data.MultiChTiffDataset "
-    '--dataset_kwargs \'{{"path_csv": "{}"}}\' '
-    "--gpu_ids {}".format(model_save_dir, data_save_path_test, gpu_id)
+    f"python ../fnet/cli/predict.py "
+    f"--path_model_dir {model_save_dir} "
+    f"--dataset fnet.data.MultiChTiffDataset "
+    f"--dataset_kwargs \'{json.dumps(dataset_kwargs)}\' "
+    f"--gpu_ids {gpu_id}"
 )
 
 print(command_str)
