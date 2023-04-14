@@ -123,6 +123,21 @@ prefs["dataset_val_kwargs"] = {
     "transform_target": ["fnet.transforms.normalize"],
     }
 
+prefs["fnet_model_kwargs"] = {
+        "betas": [
+            0.9,
+            0.999
+        ],
+        "criterion_class": "fnet.losses.PSFMSE",
+        "criterion_kwargs": {
+            "psf_path": "/home/user/storage/data/sexton_lab/astr_vpa_3stain/PSF_RW_133rf_125na_405nm_108xy_290z_63x31.tif"
+        },
+        "init_weights": False,
+        "lr": 0.001,
+        "nn_class": "fnet.nn_modules.fnet_nn_3d.Net",
+        "scheduler": None
+    }
+
 # This Fnet call will be updated as a python API becomes available
 
 with open(prefs_save_path, "w") as fp:
