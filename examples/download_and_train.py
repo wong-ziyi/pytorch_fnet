@@ -13,7 +13,7 @@ from fnet.cli.init import save_default_train_options
 parser = argparse.ArgumentParser()
 
 parser.add_argument("--gpu_id", default=0, type=int, help="GPU to use.")
-parser.add_argument("--n_imgs", default=50, type=int, help="Number of images to use.")
+parser.add_argument("--n_imgs", default=3, type=int, help="Number of images to use.")
 parser.add_argument(
     "--n_iterations", default=50000, type=int, help="Number of training iterations."
 )
@@ -32,7 +32,7 @@ args = parser.parse_args()
 
 gpu_id = args.gpu_id
 n_images_to_download = args.n_imgs  # more images the better
-train_fraction = 0.6 # see Supplementary Table 1
+train_fraction = 0.75 # see Supplementary Table 1
 
 image_save_dir = "{}/".format(os.getcwd())
 model_save_dir = "{}/model/".format(os.getcwd())
@@ -113,25 +113,37 @@ prefs["interval_checkpoint"] = args.interval_checkpoint
 prefs["dataset_train"] = "fnet.data.MultiChTiffDataset"
 prefs["dataset_train_kwargs"] = {
     "path_csv": data_save_path_train,
-    "transform_signal": ["fnet.transforms.normalize"],
-    "transform_target": ["fnet.transforms.normalize"],
+    "transform_signal": ["fnet.transforms.norm_min_max"],
+    "transform_target": ["fnet.transforms.threshold_otsu"],
     }
 prefs["dataset_val"] = "fnet.data.MultiChTiffDataset"
 prefs["dataset_val_kwargs"] = {
     "path_csv": data_save_path_test,
-    "transform_signal": ["fnet.transforms.normalize"],
-    "transform_target": ["fnet.transforms.normalize"],
+    "transform_signal": ["fnet.transforms.norm_min_max"],
+    "transform_target": ["fnet.transforms.threshold_otsu"],
     }
+
+# prefs["fnet_model_kwargs"] = {
+#         "betas": [
+#             0.9,
+#             0.999
+#         ],
+#         "criterion_class": "fnet.losses.PSFMSE",
+#         "criterion_kwargs": {
+#             "psf_path": "/home/user/storage/data/sexton_lab/astr_vpa_3stain/PSF_RW_133rf_125na_405nm_108xy_290z_63x31.tif"
+#         },
+#         "init_weights": False,
+#         "lr": 0.001,
+#         "nn_class": "fnet.nn_modules.fnet_nn_3d.Net",
+#         "scheduler": None
+#     }
 
 prefs["fnet_model_kwargs"] = {
         "betas": [
             0.9,
             0.999
         ],
-        "criterion_class": "fnet.losses.PSFMSE",
-        "criterion_kwargs": {
-            "psf_path": "/home/user/storage/data/sexton_lab/astr_vpa_3stain/PSF_RW_133rf_125na_405nm_108xy_290z_63x31.tif"
-        },
+        "criterion_class": "fnet.losses.Dice",
         "init_weights": False,
         "lr": 0.001,
         "nn_class": "fnet.nn_modules.fnet_nn_3d.Net",

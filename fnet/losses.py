@@ -1,11 +1,12 @@
 """Loss functions for fnet models."""
-
-
 from typing import Optional
 
 import tifffile
+
 import torch
 from torch.nn import functional as F
+
+from monai.losses import DiceLoss
 
 from fft_conv_pytorch import fft_conv
 
@@ -337,3 +338,29 @@ class PSFMSE(torch.nn.Module):
             mse_loss = (weight_map_batch * (y_hat_batch - y_batch) ** 2).sum(dim=dim).mean()
 
         return mse_loss
+
+class Dice(torch.nn.Module):
+    """Segmentation loss based on patch thresholding."""
+
+    def __init__(self):
+        super(Dice, self).__init__()
+        self.dice = DiceLoss(sigmoid=True)
+
+    def forward(
+        self,
+        y_hat_batch: torch.Tensor,
+        y_batch: torch.Tensor,
+        weight_map_batch: Optional[torch.Tensor] = None
+    ):
+        """Calculate Dice loss.
+
+        Parameters
+        ----------
+        y_hat_batch
+            Batched prediction.
+        y_batch
+            Batched target.
+        """
+        if self.dice(y_hat_batch, y_batch) < 0:
+            import pdb; pdb.set_trace()
+        return self.dice(y_hat_batch, y_batch)

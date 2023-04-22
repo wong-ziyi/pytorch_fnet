@@ -22,8 +22,8 @@ data_save_path_test = "{}/image_list_test.csv".format(os.getcwd())
 
 dataset_kwargs = {
     "path_csv": data_save_path_test,
-    "transform_signal": ["fnet.transforms.normalize"],
-    "transform_target": ["fnet.transforms.normalize"],
+    "transform_signal": ["fnet.transforms.norm_min_max"],
+    "transform_target": ["fnet.transforms.threshold_otsu"],
 }
 
 command_str = (

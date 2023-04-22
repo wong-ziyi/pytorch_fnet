@@ -4,6 +4,8 @@ import logging
 import numpy as np
 import scipy
 
+from skimage import filters
+
 
 logger = logging.getLogger(__name__)
 
@@ -374,7 +376,7 @@ def norm_around_center(ar: np.ndarray, z_center: Optional[int] = None):
 
 def norm_min_max(
         ar: np.ndarray,
-        q: Tuple[float,float] = (0.0, 99.9),
+        q: Tuple[float,float] = (0.0, 100.0),
         zero_center: bool = False,
 ):
     """Returns normalized version of input array.
@@ -394,6 +396,8 @@ def norm_min_max(
        Nomralized array, dtype = float32
 
     """
+    ar = np.squeeze(ar)
+
     if ar.ndim != 3:
         raise ValueError('Input array must be 3d')
     if ar.shape[0] < 32:
@@ -407,7 +411,7 @@ def norm_min_max(
         ar = 2 * (ar - norm_min) / (norm_max - norm_min) - 1
     else:
         ar = (ar - norm_min) / (norm_max - norm_min)
-    return ar.astype(np.float32)
+    return ar.astype(np.float32)[None, ...]
 
 
 def z_score(
@@ -428,6 +432,8 @@ def z_score(
        Nomralized array, dtype = float32
 
     """
+    ar = np.squeeze(ar)
+    
     if ar.ndim != 3:
         raise ValueError('Input array must be 3d')
     if ar.shape[0] < 32:
@@ -438,4 +444,36 @@ def z_score(
     ar = ar.astype(np.float32)
     ar -= ar.mean()
     ar /= ar.std()
-    return ar.astype(np.float32)
+    return ar.astype(np.float32)[None, ...]
+
+def threshold_otsu(
+        ar: np.ndarray,
+):
+    """Returns normalized version of input array.
+
+    The array will be normalized by subtracting the mean and dividing by std
+
+    Parameters
+    ----------
+    ar
+        Input 3d array to be normalized.
+
+    Returns
+    -------
+    np.ndarray
+       Nomralized array, dtype = float32
+
+    """
+    ar = np.squeeze(ar)
+
+    if ar.ndim != 3:
+        raise ValueError('Input array must be 3d')
+    if ar.shape[0] < 32:
+        raise ValueError(
+            'Input array must be at least length 32 in first dimension'
+        )
+
+    ar = filters.gaussian(ar, sigma=5)
+    thresh = filters.threshold_otsu(ar)
+    ar = (ar > thresh).astype(np.int8)
+    return ar[None, ...]
