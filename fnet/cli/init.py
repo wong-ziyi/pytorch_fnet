@@ -73,7 +73,7 @@ def save_default_train_options(path_save: Path) -> None:
         "batch_size": 24,
         "bpds_kwargs": {
             "buffer_size": 30,
-            "buffer_switch_interval": 2800,  # every 100 updates
+            "buffer_switch_interval": 2400,  # every 100 updates
             "patch_shape": [32, 64, 64],
         },
         "dataset_train": "fnet.data.TiffDataset",

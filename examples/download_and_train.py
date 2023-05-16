@@ -12,6 +12,7 @@ from fnet.cli.init import save_default_train_options
 
 parser = argparse.ArgumentParser()
 
+parser.add_argument("--model_dir", default=".", type=str, help="Working directory.")
 parser.add_argument("--gpu_id", default=0, type=int, help="GPU to use.")
 parser.add_argument("--n_imgs", default=50, type=int, help="Number of images to use.")
 parser.add_argument(
@@ -34,10 +35,10 @@ gpu_id = args.gpu_id
 n_images_to_download = args.n_imgs  # more images the better
 train_fraction = 0.6 # see Supplementary Table 1
 
-image_save_dir = "{}/".format(os.getcwd())
-model_save_dir = "{}/model/".format(os.getcwd())
-prefs_save_path = "{}/prefs.json".format(model_save_dir)
+image_save_dir = f"{os.getcwd()}"
+model_save_dir = f"{os.getcwd()}/{args.model_dir}/model/"
 
+prefs_save_path = "{}/prefs.json".format(model_save_dir)
 data_save_path_train = "{}/image_list_train.csv".format(image_save_dir)
 data_save_path_test = "{}/image_list_test.csv".format(image_save_dir)
 
@@ -122,6 +123,26 @@ prefs["dataset_val_kwargs"] = {
     "transform_signal": ["fnet.transforms.normalize"],
     "transform_target": ["fnet.transforms.normalize"],
     }
+
+batch_size = 48
+prefs["batch_size"] = batch_size
+# prefs["bpds_kwargs"] = {
+#     "buffer_size": 30,
+#     "buffer_switch_interval": 2800,  # every 100 updates
+#     "patch_shape": [32, 64, 64],
+#     }
+
+# prefs["fnet_model_kwargs"] = {
+#     "betas": [0.9, 0.999],
+#     "criterion_class": "fnet.losses.WeightedMSE",
+#     "init_weights": False,
+#     "lr": 0.001,
+#     "nn_class": "fnet.nn_modules.fnet_nn_3d.Net",
+#     "nn_kwargs": {
+#             "mult_chan": 64
+#         },
+#     "scheduler": None,
+# }
 
 # This Fnet call will be updated as a python API becomes available
 
