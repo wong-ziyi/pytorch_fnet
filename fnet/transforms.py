@@ -4,6 +4,9 @@ import logging
 import numpy as np
 import scipy
 
+from skimage import img_as_float32
+from morphocell.preprocessing import get_threshold_otsu
+from morphocell.segmentation.segment_utils import downscale_and_filter
 
 logger = logging.getLogger(__name__)
 
@@ -374,7 +377,7 @@ def norm_around_center(ar: np.ndarray, z_center: Optional[int] = None):
 
 def norm_min_max(
         ar: np.ndarray,
-        q: Tuple[float,float] = (0.0, 99.9),
+        q: Tuple[float,float] = (0.0, 100.0),
         zero_center: bool = False,
 ):
     """Returns normalized version of input array.
@@ -410,12 +413,11 @@ def norm_min_max(
     return ar.astype(np.float32)
 
 
-def z_score(
+def norm_range(
         ar: np.ndarray,
 ):
-    """Returns normalized version of input array.
+    """Returns array normalized by dtype range.
 
-    The array will be normalized by subtracting the mean and dividing by std
 
     Parameters
     ----------
@@ -425,8 +427,34 @@ def z_score(
     Returns
     -------
     np.ndarray
-       Nomralized array, dtype = float32
+         Nomralized array, dtype = float32
+    """
+    if ar.ndim != 3:
+        raise ValueError('Input array must be 3d')
+    if ar.shape[0] < 32:
+        raise ValueError(
+            'Input array must be at least length 32 in first dimension'
+        )
+    
+    ar = ar / np.iinfo(ar.dtype).max
+    return ar.astype(np.float32)
 
+
+def norm_threshold(
+        ar: np.ndarray,
+):
+    """
+    Normalizes array by thresholding and standard deviation.
+
+    Parameters
+    ----------
+    ar
+        Input 3d array to be normalized.
+
+    Returns
+    -------
+    np.ndarray
+         Nomralized array, dtype = float32
     """
     if ar.ndim != 3:
         raise ValueError('Input array must be 3d')
@@ -435,7 +463,7 @@ def z_score(
             'Input array must be at least length 32 in first dimension'
         )
 
-    ar = ar.astype(np.float32)
-    ar -= ar.mean()
-    ar /= ar.std()
+    thresh = get_threshold_otsu(downscale_and_filter(ar, downscale_factor=1, filter_size=5))
+    ar = img_as_float32(ar) if not np.issubdtype(ar.dtype, np.floating) else ar
+    ar = (ar - thresh) / ar.std()
     return ar.astype(np.float32)
