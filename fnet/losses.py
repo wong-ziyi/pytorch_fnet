@@ -1,12 +1,14 @@
 """Loss functions for fnet models."""
-
-
 from typing import Optional
+
+import tifffile
 
 import torch
 from torch.nn import functional as F
 
 from pytorch3dunet.unet3d.losses import DiceLoss, BCEDiceLoss
+
+from fft_conv_pytorch import fft_conv
 
 
 class HeteroscedasticLoss(torch.nn.Module):
@@ -57,8 +59,8 @@ class WeightedMSE(torch.nn.Module):
             return F.mse_loss(y_hat_batch, y_batch)
         dim = tuple(range(1, len(weight_map_batch.size())))
         return (weight_map_batch * (y_hat_batch - y_batch) ** 2).sum(dim=dim).mean()
-    
-    
+
+
 class HuberLoss(torch.nn.Module):
     """Huber loss."""
 
@@ -87,8 +89,8 @@ class HuberLoss(torch.nn.Module):
         dim = tuple(range(1, len(weight_map_batch.size())))
         # weight map should sum up to 1.0 across all pixels in each image
         return (weight_map_batch * (delta ** 2 * (torch.sqrt(1 + ((y_hat_batch - y_batch) / delta) ** 2) - 1))).sum(dim=dim).mean()
-    
-    
+
+
 class SpectralLoss(torch.nn.Module):
     """Spectral loss."""
 
@@ -110,16 +112,16 @@ class SpectralLoss(torch.nn.Module):
             Optional weight map.
         """
         dim = tuple(range(1, len(y_batch.size())))
-        
+
         y_hat_fft_mag_batch = torch.fft.rfftn(y_hat_batch, dim=dim).abs()
         y_fft_mag_batch = torch.fft.rfftn(y_batch, dim=dim).abs()
-        
+
         if weight_map_batch is None:
             return F.mse_loss(y_hat_fft_mag_batch, y_fft_mag_batch)
         dim = tuple(range(1, len(weight_map_batch.size())))
         return (weight_map_batch * (y_hat_batch - y_batch) ** 2).sum(dim=dim).mean()
 
-    
+
 class SpectralMSE(torch.nn.Module):
     """Spectral and pixel MSE combined loss."""
 
@@ -144,19 +146,19 @@ class SpectralMSE(torch.nn.Module):
             Weight of spectral loss in the comination with MSE.
         """
         dim = tuple(range(1, len(y_batch.size())))
-        
+
         y_hat_fft_mag_batch = torch.fft.rfftn(y_hat_batch, dim=dim).abs()
         y_fft_mag_batch = torch.fft.rfftn(y_batch, dim=dim).abs()
         spectral_loss = F.mse_loss(y_hat_fft_mag_batch, y_fft_mag_batch)
-        
+
         if weight_map_batch is None:
             mse_loss = F.mse_loss(y_hat_batch, y_batch)
         else:
             mse_loss = (weight_map_batch * (y_hat_batch - y_batch) ** 2).sum(dim=dim).mean()
 
         return (1 - alpha) * mse_loss + alpha * spectral_loss
-    
-    
+
+
 class JaccardBCE(torch.nn.Module):
     """Segmentation loss based on patch thresholding."""
 
@@ -184,19 +186,19 @@ class JaccardBCE(torch.nn.Module):
             Weight of spectral loss in the comination with BCE.
         """
         eps = 1e-15
-        
+
         bin_y_batch = (y_batch >= threshold).float()
         soft_y_hat_batch = torch.sigmoid(y_hat_batch)
 
         intersection = (soft_y_hat_batch * bin_y_batch).sum()
         union = soft_y_hat_batch.sum() + bin_y_batch.sum()
         soft_jaccard = intersection / (union - intersection + eps)
-        
+
         bce = F.binary_cross_entropy_with_logits(y_hat_batch, bin_y_batch)
-        
+
         return (1 - alpha) * bce - alpha * torch.log(soft_jaccard)
 
-    
+
 class JaccardMSE(torch.nn.Module):
     """Combination loss based on pixel-MSE and IoU with patch thresholding."""
 
@@ -224,22 +226,23 @@ class JaccardMSE(torch.nn.Module):
             Weight of spectral loss in the comination with MSE.
         """
         eps = 1e-15
-        
+
         bin_y_batch = (y_batch >= threshold).float()
         soft_y_hat_batch = torch.sigmoid(y_hat_batch)
 
         intersection = (soft_y_hat_batch * bin_y_batch).sum()
         union = soft_y_hat_batch.sum() + bin_y_batch.sum()
         soft_jaccard = intersection / (union - intersection + eps)
-        
+
         if weight_map_batch is None:
             mse_loss = F.mse_loss(y_hat_batch, y_batch)
         else:
+            dim = tuple(range(1, len(weight_map_batch.size())))
             mse_loss = (weight_map_batch * (y_hat_batch - y_batch) ** 2).sum(dim=dim).mean()
-        
+
         return (1 - alpha) * mse_loss - alpha * torch.log(soft_jaccard)
 
-    
+
 class JaccardSoftMSE(torch.nn.Module):
     """Combination loss based on pixel-MSE and IoU with patch thresholding."""
 
@@ -267,17 +270,18 @@ class JaccardSoftMSE(torch.nn.Module):
             Weight of spectral loss in the comination with MSE.
         """
         eps = 1e-15
-        
+
         bin_y_batch = (y_batch >= threshold).float()
         soft_y_hat_batch = torch.sigmoid(y_hat_batch)
 
         intersection = (soft_y_hat_batch * bin_y_batch).sum()
         union = soft_y_hat_batch.sum() + bin_y_batch.sum()
         soft_jaccard = intersection / (union - intersection + eps)
-        
+
         if weight_map_batch is None:
             mse_loss = F.mse_loss(soft_y_hat_batch, y_batch)
         else:
+            dim = tuple(range(1, len(weight_map_batch.size())))
             mse_loss = (weight_map_batch * (soft_y_hat_batch - y_batch) ** 2).sum(dim=dim).mean()
         
         return (1 - alpha) * mse_loss - alpha * torch.log(soft_jaccard)
@@ -302,6 +306,7 @@ class MSEBCEDiceLoss(torch.nn.Module):
 
         return (1 - self.gamma) * bce_dice_loss + self.gamma * mse_loss
 
+
 class WMSEDiceLoss(torch.nn.Module):
     """Linear combination of MSE and Dice losses."""
 
@@ -313,7 +318,7 @@ class WMSEDiceLoss(torch.nn.Module):
     def tune_sigm(self, x, k=-0.95):
         denominator = k - 2 * k * torch.abs(x) + 1
         return (x - k * x) / denominator.clamp(min=torch.finfo(torch.float32).eps)
-
+    
     def forward(
         self,
         y_hat_batch: torch.Tensor,
@@ -324,7 +329,8 @@ class WMSEDiceLoss(torch.nn.Module):
         # mse_loss = F.mse_loss(y_hat_batch, y_batch)
 
         # there is a bug in preprocessing that converts [0,1] weight map to [0,257]
-        weight_map_batch /= 257.0
+        # weight_map_batch /= 257.0
+        weight_map_batch = (weight_map_batch > 0).float()
 
         if weight_map_batch is None:
             mse_loss = F.mse_loss(y_hat_batch, y_batch)
@@ -335,3 +341,56 @@ class WMSEDiceLoss(torch.nn.Module):
             dice_loss = self.dice(self.tune_sigm(y_hat_batch), weight_map_batch)
 
         return (1 - self.gamma) * dice_loss + self.gamma * mse_loss
+
+
+class PSFMSE(torch.nn.Module):
+    """Loss with PSF."""
+
+    def __init__(self, psf_path: str):
+        """Initialize loss module.
+
+        Parameters
+        ----------
+        psf_path
+            Path to the point spread function.
+        """
+        super(PSFMSE, self).__init__()
+
+        psf = tifffile.imread(psf_path)
+
+        # calculate padding
+        padding = ((psf.shape[0] - 1) // 2, (psf.shape[1] - 1) // 2, (psf.shape[2] - 1) // 2)
+        self.padding = tuple(x for x in reversed(padding) for _ in range(2))
+
+        # normalize psf
+        psf = torch.tensor(psf[None, None, :, :, :], dtype=torch.float32).cuda()
+        self.psf = psf / psf.sum()
+
+    def forward(
+        self,
+        y_hat_batch: torch.Tensor,
+        y_batch: torch.Tensor,
+        weight_map_batch: Optional[torch.Tensor] = None,
+    ):
+        """Calculate loss after convolving PSF.
+
+        Parameters
+        ----------
+        y_hat_batch
+            Batched prediction.
+        y_batch
+            Batched target.
+        weight_map_batch
+            Optional weight map.
+        """
+        # convolve with PSF
+        y_hat_batch = fft_conv(F.pad(y_hat_batch, self.padding, "reflect"), self.psf)
+
+        # TODO: exclude border voxels from loss calculation
+        if weight_map_batch is None:
+            mse_loss = F.mse_loss(y_hat_batch, y_batch)
+        else:
+            dim = tuple(range(1, len(weight_map_batch.size())))
+            mse_loss = (weight_map_batch * (y_hat_batch - y_batch) ** 2).sum(dim=dim).mean()
+
+        return mse_loss

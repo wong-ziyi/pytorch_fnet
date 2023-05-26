@@ -147,7 +147,7 @@ def save_tif(fname: str, ar: np.ndarray, path_root: str) -> str:
     path_save = os.path.join(path_tif_dir, fname)
     # change compression level to default
 #     tifffile.imsave(path_save, ar, compress=2)
-    tifffile.imsave(path_save, ar)
+    tifffile.imwrite(path_save, ar)
     logger.info(f"Saved: {path_save}")
     return os.path.relpath(path_save, path_root)
 
@@ -347,6 +347,7 @@ def main(args: Optional[argparse.Namespace] = None) -> None:
                 model = load_model(model_def["path"], no_optim=True)
                 model.to_gpu(args.gpu_ids)
                 logger.info(f'Loaded model: {model_def["name"]}')
+            import pdb; pdb.set_trace()
             prediction = model.predict_piecewise(
                 signal, tta=("no_tta" not in model_def["options"])
             )

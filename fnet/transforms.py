@@ -397,6 +397,8 @@ def norm_min_max(
        Nomralized array, dtype = float32
 
     """
+    ar = np.squeeze(ar)
+
     if ar.ndim != 3:
         raise ValueError('Input array must be 3d')
     if ar.shape[0] < 32:
@@ -410,7 +412,7 @@ def norm_min_max(
         ar = 2 * (ar - norm_min) / (norm_max - norm_min) - 1
     else:
         ar = (ar - norm_min) / (norm_max - norm_min)
-    return ar.astype(np.float32)
+    return ar.astype(np.float32)[None, ...]
 
 
 def norm_range(
@@ -456,6 +458,8 @@ def norm_threshold(
     np.ndarray
          Nomralized array, dtype = float32
     """
+    ar = np.squeeze(ar)
+    
     if ar.ndim != 3:
         raise ValueError('Input array must be 3d')
     if ar.shape[0] < 32:

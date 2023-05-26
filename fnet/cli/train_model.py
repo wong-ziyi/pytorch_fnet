@@ -15,6 +15,7 @@ import time
 
 import numpy as np
 import torch
+torch.backends.cudnn.enabled = False
 
 from fnet.cli.init import save_default_train_options
 from fnet.data import BufferedPatchDataset
@@ -107,6 +108,7 @@ def main(args: Optional[argparse.Namespace] = None):
     args.__dict__.update(train_options)
     add_logging_file_handler(Path(args.path_save_dir, "train_model.log"))
     logger.info(f"Started training at: {datetime.datetime.now()}")
+    logger.info(f"CuDNN benchmark: {torch.backends.cudnn.benchmark}")
 
     set_seeds(args.seed)
     log_training_options(vars(args))
@@ -140,7 +142,7 @@ def main(args: Optional[argparse.Namespace] = None):
         loss_train = model.train_on_batch(*bpds_train.get_batch(args.batch_size))
         loss_val = None
         metric_val = None
-        
+
         if do_save and bpds_val is not None:
             loss_val, metric_val = model.test_on_iterator(
                 [bpds_val.get_batch(args.batch_size) for _ in range(4)]
@@ -161,7 +163,7 @@ def main(args: Optional[argparse.Namespace] = None):
             f'iter: {fnetlogger.data["num_iter"][-1]:6d} | '
             f'loss_train: {fnetlogger.data["loss_train"][-1]:.6f}'
         )
-        
+
         if do_save:
             model.save(path_model)
             fnetlogger.to_csv(path_losses_csv)
