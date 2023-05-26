@@ -76,6 +76,7 @@ class Model:
         self,
         betas=(0.5, 0.999),
         criterion_class="fnet.losses.WeightedMSE",
+        criterion_kwargs={},
         metric="fnet.metrics.corr_coef",
         init_weights=True,
         lr=0.001,
@@ -86,7 +87,7 @@ class Model:
         gpu_ids=-1,
     ):
         self.betas = betas
-        self.criterion = str_to_object(criterion_class)()
+        self.criterion = str_to_object(criterion_class)(**criterion_kwargs)
         self.metric = str_to_object(metric)
         self.gpu_ids = [gpu_ids] if isinstance(gpu_ids, int) else gpu_ids
         self.init_weights = init_weights

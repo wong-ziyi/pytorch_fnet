@@ -6,6 +6,8 @@ from typing import Optional
 import torch
 from torch.nn import functional as F
 
+from pytorch3dunet.unet3d.losses import DiceLoss, BCEDiceLoss
+
 
 class HeteroscedasticLoss(torch.nn.Module):
     """Loss function to capture heteroscedastic aleatoric uncertainty."""
@@ -279,3 +281,57 @@ class JaccardSoftMSE(torch.nn.Module):
             mse_loss = (weight_map_batch * (soft_y_hat_batch - y_batch) ** 2).sum(dim=dim).mean()
         
         return (1 - alpha) * mse_loss - alpha * torch.log(soft_jaccard)
+
+
+class MSEBCEDiceLoss(torch.nn.Module):
+    """Linear combination of MSE, BCE, and Dice losses"""
+
+    def __init__(self, alpha, beta, gamma):
+        super(MSEBCEDiceLoss, self).__init__()
+        self.gamma = gamma
+        self.bcedice = BCEDiceLoss(alpha=alpha, beta=beta)
+
+    def forward(
+        self,
+        y_hat_batch: torch.Tensor,
+        y_batch: torch.Tensor,
+        weight_map_batch: torch.Tensor,
+    ):
+        mse_loss = F.mse_loss(y_hat_batch, y_batch)
+        bce_dice_loss = self.bcedice(y_hat_batch, (weight_map_batch > 0).float())
+
+        return (1 - self.gamma) * bce_dice_loss + self.gamma * mse_loss
+
+class WMSEDiceLoss(torch.nn.Module):
+    """Linear combination of MSE and Dice losses."""
+
+    def __init__(self, gamma):
+        super(WMSEDiceLoss, self).__init__()
+        self.gamma = gamma
+        self.dice = DiceLoss(normalization="none")
+
+    def tune_sigm(self, x, k=-0.95):
+        denominator = k - 2 * k * torch.abs(x) + 1
+        return (x - k * x) / denominator.clamp(min=torch.finfo(torch.float32).eps)
+
+    def forward(
+        self,
+        y_hat_batch: torch.Tensor,
+        y_batch: torch.Tensor,
+        weight_map_batch: Optional[torch.Tensor] = None,
+    ):
+        # # unweighted MSE option (mse_dice_tunesigm_bin)
+        # mse_loss = F.mse_loss(y_hat_batch, y_batch)
+
+        # there is a bug in preprocessing that converts [0,1] weight map to [0,257]
+        weight_map_batch /= 257.0
+
+        if weight_map_batch is None:
+            mse_loss = F.mse_loss(y_hat_batch, y_batch)
+            dice_loss = self.dice(self.tune_sigm(y_hat_batch), self.tune_sigm(y_batch))
+        else:
+            dim = tuple(range(1, len(weight_map_batch.size())))
+            mse_loss = (weight_map_batch * (y_hat_batch - y_batch) ** 2).mean()
+            dice_loss = self.dice(self.tune_sigm(y_hat_batch), weight_map_batch)
+
+        return (1 - self.gamma) * dice_loss + self.gamma * mse_loss
