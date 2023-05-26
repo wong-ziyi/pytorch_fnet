@@ -76,7 +76,7 @@ class TiffDataset(FnetDataset):
         for col, transforms in [
             [self.col_signal, self.transform_signal],
             [self.col_target, self.transform_target],
-            [self.col_weight_map, None],  # optional weight maps
+            [self.col_weight_map, self.transform_weight_map],  # optional weight maps
         ]:
             if col is None:
                 continue

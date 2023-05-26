@@ -59,6 +59,7 @@ class FnetDataset(torch.utils.data.Dataset):
         path_csv: Optional[str] = None,
         transform_signal: Optional[list] = None,
         transform_target: Optional[list] = None,
+        transform_weight_map: Optional[list] = None,
     ):
         self.path_csv = None
         if dataframe is not None:
@@ -68,6 +69,7 @@ class FnetDataset(torch.utils.data.Dataset):
             self.df = pd.read_csv(self.path_csv)
         self.transform_signal = to_objects(transform_signal)
         self.transform_target = to_objects(transform_target)
+        self.transform_weight_map = to_objects(transform_weight_map)
         self._metadata = None
         self.loc = _LocIndexer(self)
         self.iloc = _iLocIndexer(self)
@@ -82,6 +84,7 @@ class FnetDataset(torch.utils.data.Dataset):
             self._metadata["path_csv"] = self.path_csv
         self._metadata["transform_signal"] = _to_str_list(self.transform_signal)
         self._metadata["transform_target"] = _to_str_list(self.transform_target)
+        self._metadata["transform_weight_map"] = _to_str_list(self.transform_weight_map)
         return self._metadata
 
     def get_information(self, index) -> Union[dict, str]:
