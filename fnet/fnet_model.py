@@ -391,12 +391,12 @@ class Model:
         args = [y_hat_batch, y_batch]
 
         if weight_map_batch is not None:
-            args.append(weight_map_batch)
+            args.append(weight_map_batch.to(device=self.device))
 
         loss = self.criterion(*args).cpu()
 
         args = [arg.cpu() for arg in args]
-        metric = self.metric(*args)
+        metric = self.metric(*args[:2])
 
         return loss.item(), metric
 
