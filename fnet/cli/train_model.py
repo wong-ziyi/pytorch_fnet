@@ -15,6 +15,7 @@ import time
 
 import numpy as np
 import torch
+
 torch.backends.cudnn.enabled = False
 
 from fnet.cli.init import save_default_train_options
@@ -30,9 +31,7 @@ logger = logging.getLogger(__name__)
 
 def log_training_options(options: Dict) -> None:
     """Logs training options."""
-    for line in ["*** Training options ***"] + pprint.pformat(options).split(
-        os.linesep
-    ):
+    for line in ["*** Training options ***"] + pprint.pformat(options).split(os.linesep):
         logger.info(line)
 
 
@@ -81,9 +80,7 @@ def get_bpds_val(args: argparse.Namespace) -> Optional[BufferedPatchDataset]:
 
 def add_parser_arguments(parser) -> None:
     """Add training script arguments to parser."""
-    parser.add_argument(
-        "--json", type=Path, required=True, help="json with training options"
-    )
+    parser.add_argument("--json", type=Path, required=True, help="json with training options")
     parser.add_argument("--gpu_ids", nargs="+", default=[0], type=int, help="gpu_id(s)")
 
 
@@ -135,20 +132,16 @@ def main(args: Optional[argparse.Namespace] = None):
 
     # MAIN LOOP
     for idx_iter in range(model.count_iter, args.n_iter):
-        do_save = ((idx_iter + 1) % args.interval_save == 0) or (
-            (idx_iter + 1) == args.n_iter
-        )
+        do_save = ((idx_iter + 1) % args.interval_save == 0) or ((idx_iter + 1) == args.n_iter)
 
         loss_train = model.train_on_batch(*bpds_train.get_batch(args.batch_size))
         loss_val = None
         metric_val = None
 
         if do_save and bpds_val is not None:
-            loss_val, metric_val = model.test_on_iterator(
-                [bpds_val.get_batch(args.batch_size) for _ in range(4)]
-            )
+            loss_val, metric_val = model.test_on_iterator([bpds_val.get_batch(args.batch_size) for _ in range(4)])
             if loss_val < model.best_loss_val:
-                print(f'New loss val {loss_val:.6f} is lower than previous best loss val {model.best_loss_val:.6f}')
+                print(f"New loss val {loss_val:.6f} is lower than previous best loss val {model.best_loss_val:.6f}")
                 model.best_loss_val = loss_val
                 path_best_loss_val = os.path.join(
                     args.path_save_dir, "best_loss_val_model", f"model_{idx_iter + 1:06d}.p"
@@ -159,10 +152,7 @@ def main(args: Optional[argparse.Namespace] = None):
         fnetlogger.add(
             {"num_iter": idx_iter + 1, "loss_train": loss_train, "loss_val": loss_val, "metric_val": metric_val}
         )
-        print(
-            f'iter: {fnetlogger.data["num_iter"][-1]:6d} | '
-            f'loss_train: {fnetlogger.data["loss_train"][-1]:.6f}'
-        )
+        print(f'iter: {fnetlogger.data["num_iter"][-1]:6d} | ' f'loss_train: {fnetlogger.data["loss_train"][-1]:.6f}')
 
         if do_save:
             model.save(path_model)
@@ -174,12 +164,8 @@ def main(args: Optional[argparse.Namespace] = None):
             logger.info(f"Loss log saved to: {path_losses_csv}")
             logger.info(f"Model saved to: {path_model}")
             logger.info(f"Elapsed time: {time.time() - time_start:.1f} s")
-        if ((idx_iter + 1) in args.iter_checkpoint) or (
-            (idx_iter + 1) % args.interval_checkpoint == 0
-        ):
-            path_checkpoint = os.path.join(
-                args.path_save_dir, "checkpoints", "model_{:06d}.p".format(idx_iter + 1)
-            )
+        if ((idx_iter + 1) in args.iter_checkpoint) or ((idx_iter + 1) % args.interval_checkpoint == 0):
+            path_checkpoint = os.path.join(args.path_save_dir, "checkpoints", "model_{:06d}.p".format(idx_iter + 1))
             model.save(path_checkpoint)
             logger.info(f"Saved model checkpoint: {path_checkpoint}")
             vu.plot_loss(

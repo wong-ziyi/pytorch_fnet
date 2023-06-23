@@ -27,10 +27,7 @@ class HeteroscedasticLoss(torch.nn.Module):
         """
         mean_batch = y_hat_batch[:, 0:1, :, :, :]
         log_var_batch = y_hat_batch[:, 1:2, :, :, :]
-        loss_batch = (
-            0.5 * torch.exp(-log_var_batch) * (mean_batch - y_batch).pow(2)
-            + 0.5 * log_var_batch
-        )
+        loss_batch = 0.5 * torch.exp(-log_var_batch) * (mean_batch - y_batch).pow(2) + 0.5 * log_var_batch
         return loss_batch.mean()
 
 
@@ -69,7 +66,7 @@ class HuberLoss(torch.nn.Module):
         y_hat_batch: torch.Tensor,
         y_batch: torch.Tensor,
         weight_map_batch: Optional[torch.Tensor] = None,
-        delta: float = 1.0
+        delta: float = 1.0,
     ):
         """Calculate Huber loss.
 
@@ -85,20 +82,21 @@ class HuberLoss(torch.nn.Module):
             Threshold at which to change between delta-scaled L1 and L2 loss.
         """
         if weight_map_batch is None:
-            return (delta ** 2 * (torch.sqrt(1 + ((y_hat_batch - y_batch) / delta) ** 2) - 1)).mean()
+            return (delta**2 * (torch.sqrt(1 + ((y_hat_batch - y_batch) / delta) ** 2) - 1)).mean()
         dim = tuple(range(1, len(weight_map_batch.size())))
         # weight map should sum up to 1.0 across all pixels in each image
-        return (weight_map_batch * (delta ** 2 * (torch.sqrt(1 + ((y_hat_batch - y_batch) / delta) ** 2) - 1))).sum(dim=dim).mean()
+        return (
+            (weight_map_batch * (delta**2 * (torch.sqrt(1 + ((y_hat_batch - y_batch) / delta) ** 2) - 1)))
+            .sum(dim=dim)
+            .mean()
+        )
 
 
 class SpectralLoss(torch.nn.Module):
     """Spectral loss."""
 
     def forward(
-        self,
-        y_hat_batch: torch.Tensor,
-        y_batch: torch.Tensor,
-        weight_map_batch: Optional[torch.Tensor] = None
+        self, y_hat_batch: torch.Tensor, y_batch: torch.Tensor, weight_map_batch: Optional[torch.Tensor] = None
     ):
         """Calculate MSE of magnitudes in Fourier space.
 
@@ -130,7 +128,7 @@ class SpectralMSE(torch.nn.Module):
         y_hat_batch: torch.Tensor,
         y_batch: torch.Tensor,
         weight_map_batch: Optional[torch.Tensor] = None,
-        alpha: float = 0.2
+        alpha: float = 0.2,
     ):
         """Calculate MSEs of images and of their magnitudes in Fourier space.
 
@@ -167,8 +165,8 @@ class JaccardBCE(torch.nn.Module):
         y_hat_batch: torch.Tensor,
         y_batch: torch.Tensor,
         weight_map_batch: Optional[torch.Tensor] = None,
-        threshold = 0.005,
-        alpha: float = 0.5
+        threshold=0.005,
+        alpha: float = 0.5,
     ):
         """Calculate loss defined as alpha * BCE - (1 - alpha) * log (SoftJaccard).
 
@@ -207,8 +205,8 @@ class JaccardMSE(torch.nn.Module):
         y_hat_batch: torch.Tensor,
         y_batch: torch.Tensor,
         weight_map_batch: Optional[torch.Tensor] = None,
-        threshold = 0.005,
-        alpha: float = 0.5
+        threshold=0.005,
+        alpha: float = 0.5,
     ):
         """Calculate loss defined as alpha * MSE - (1 - alpha) * log (SoftJaccard).
 
@@ -251,8 +249,8 @@ class JaccardSoftMSE(torch.nn.Module):
         y_hat_batch: torch.Tensor,
         y_batch: torch.Tensor,
         weight_map_batch: Optional[torch.Tensor] = None,
-        threshold = 0.005,
-        alpha: float = 0.5
+        threshold=0.005,
+        alpha: float = 0.5,
     ):
         """Calculate loss defined as alpha * MSE - (1 - alpha) * log (SoftJaccard).
 
@@ -283,7 +281,7 @@ class JaccardSoftMSE(torch.nn.Module):
         else:
             dim = tuple(range(1, len(weight_map_batch.size())))
             mse_loss = (weight_map_batch * (soft_y_hat_batch - y_batch) ** 2).sum(dim=dim).mean()
-        
+
         return (1 - alpha) * mse_loss - alpha * torch.log(soft_jaccard)
 
 
@@ -318,7 +316,7 @@ class WMSEDiceLoss(torch.nn.Module):
     def tune_sigm(self, x, k=-0.95):
         denominator = k - 2 * k * torch.abs(x) + 1
         return (x - k * x) / denominator.clamp(min=torch.finfo(torch.float32).eps)
-    
+
     def forward(
         self,
         y_hat_batch: torch.Tensor,
@@ -391,7 +389,7 @@ class PSFMSE(torch.nn.Module):
             mse_loss = (weight_map_batch * (y_hat_batch - y_batch) ** 2).sum(dim=dim).mean()
 
         return mse_loss
-    
+
 
 class PSFWMSEDiceLoss(torch.nn.Module):
     """Linear combination of MSE and Dice losses with PSF."""

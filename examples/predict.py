@@ -30,7 +30,7 @@ command_str = (
     f"python ../fnet/cli/predict.py "
     f"--path_model_dir {model_save_dir} "
     f"--dataset fnet.data.MultiChTiffDataset "
-    f"--dataset_kwargs \'{json.dumps(dataset_kwargs)}\' "
+    f"--dataset_kwargs '{json.dumps(dataset_kwargs)}' "
     f"--gpu_ids {gpu_id}"
 )
 

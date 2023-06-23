@@ -6,9 +6,7 @@ import torch.utils.data
 
 
 class CziDataset(FnetDataset):
-    """Dataset for CZI files.
-
-    """
+    """Dataset for CZI files."""
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)

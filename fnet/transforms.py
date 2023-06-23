@@ -38,9 +38,7 @@ def normalize(img, per_dim=None):
       per_dim: normalize along other axes dimensions not equal to per dim
     """
     axis = tuple([i for i in range(img.ndim) if i != per_dim])
-    slices = tuple(
-        [slice(None) if i == per_dim else np.newaxis for i in range(img.ndim)]
-    )  # to handle broadcasting
+    slices = tuple([slice(None) if i == per_dim else np.newaxis for i in range(img.ndim)])  # to handle broadcasting
     result = img.astype(np.float32)
     result -= np.mean(result, axis=axis)[slices]
     result /= np.std(result, axis=axis)[slices]
@@ -104,9 +102,7 @@ class Padder(object):
             if isinstance(paddings[i], int):
                 pad_width.append((paddings[i],) * 2)
             elif paddings[i] == "+":
-                padding_total = (
-                    int(np.ceil(1.0 * shape_in[i] / self.by) * self.by) - shape_in[i]
-                )
+                padding_total = int(np.ceil(1.0 * shape_in[i] / self.by) * self.by) - shape_in[i]
                 pad_left = padding_total // 2
                 pad_right = padding_total - pad_left
                 pad_width.append((pad_left, pad_right))
@@ -116,10 +112,7 @@ class Padder(object):
     def undo_last(self, x_in):
         """Crops input so its dimensions matches dimensions of last input to __call__."""
         assert x_in.shape == self.last_pad["shape_out"]
-        slices = [
-            slice(a, -b) if (a, b) != (0, 0) else slice(None)
-            for a, b in self.last_pad["pad_width"]
-        ]
+        slices = [slice(a, -b) if (a, b) != (0, 0) else slice(None) for a, b in self.last_pad["pad_width"]]
         return x_in[slices].copy()
 
     def __call__(self, x_in):
@@ -137,32 +130,24 @@ class Padder(object):
 
 
 class Cropper(object):
-    def __init__(
-        self, cropping="-", by=16, offset="mid", n_max_pixels=9732096, dims_no_crop=None
-    ):
+    def __init__(self, cropping="-", by=16, offset="mid", n_max_pixels=9732096, dims_no_crop=None):
         """Crop input array to given shape."""
         self.cropping = cropping
         self.offset = offset
         self.by = by
         self.n_max_pixels = n_max_pixels
-        self.dims_no_crop = (
-            [dims_no_crop] if isinstance(dims_no_crop, int) else dims_no_crop
-        )
+        self.dims_no_crop = [dims_no_crop] if isinstance(dims_no_crop, int) else dims_no_crop
         self.crops = {}
         self.last_crop = None
 
     def __repr__(self):
-        return "Cropper{}".format(
-            (self.cropping, self.by, self.offset, self.n_max_pixels, self.dims_no_crop)
-        )
+        return "Cropper{}".format((self.cropping, self.by, self.offset, self.n_max_pixels, self.dims_no_crop))
 
     def _adjust_shape_crop(self, shape_crop):
         shape_crop_new = list(shape_crop)
         prod_shape = np.prod(shape_crop_new)
         idx_dim_reduce = 0
-        order_dim_reduce = list(
-            range(len(shape_crop))[-2:]
-        )  # alternate between last two dimensions
+        order_dim_reduce = list(range(len(shape_crop))[-2:])  # alternate between last two dimensions
         while prod_shape > self.n_max_pixels:
             dim = order_dim_reduce[idx_dim_reduce]
             if not (dim == 0 and shape_crop_new[dim] <= 64):
@@ -175,16 +160,10 @@ class Cropper(object):
         return value
 
     def _calc_shape_crop(self, shape_in):
-        croppings = (
-            (self.cropping,) * len(shape_in)
-            if isinstance(self.cropping, (str, int))
-            else self.cropping
-        )
+        croppings = (self.cropping,) * len(shape_in) if isinstance(self.cropping, (str, int)) else self.cropping
         shape_crop = []
         for i in range(len(shape_in)):
-            if (croppings[i] is None) or (
-                self.dims_no_crop is not None and i in self.dims_no_crop
-            ):
+            if (croppings[i] is None) or (self.dims_no_crop is not None and i in self.dims_no_crop):
                 shape_crop.append(shape_in[i])
             elif isinstance(croppings[i], int):
                 shape_crop.append(shape_in[i] - croppings[i])
@@ -198,22 +177,12 @@ class Cropper(object):
         return shape_crop
 
     def _calc_offsets_crop(self, shape_in, shape_crop):
-        offsets = (
-            (self.offset,) * len(shape_in)
-            if isinstance(self.offset, (str, int))
-            else self.offset
-        )
+        offsets = (self.offset,) * len(shape_in) if isinstance(self.offset, (str, int)) else self.offset
         offsets_crop = []
         for i in range(len(shape_in)):
-            offset = (
-                (shape_in[i] - shape_crop[i]) // 2
-                if offsets[i] == "mid"
-                else offsets[i]
-            )
+            offset = (shape_in[i] - shape_crop[i]) // 2 if offsets[i] == "mid" else offsets[i]
             if offset + shape_crop[i] > shape_in[i]:
-                logger.error(
-                    f"Cannot crop outsize image dimensions ({offset}:{offset + shape_crop[i]} for dim {i})"
-                )
+                logger.error(f"Cannot crop outsize image dimensions ({offset}:{offset + shape_crop[i]} for dim {i})")
                 raise AttributeError
             offsets_crop.append(offset)
         self.crops[shape_in]["offsets_crop"] = offsets_crop
@@ -222,10 +191,7 @@ class Cropper(object):
     def _calc_slices(self, shape_in):
         shape_crop = self._calc_shape_crop(shape_in)
         offsets_crop = self._calc_offsets_crop(shape_in, shape_crop)
-        slices = [
-            slice(offsets_crop[i], offsets_crop[i] + shape_crop[i])
-            for i in range(len(shape_in))
-        ]
+        slices = [slice(offsets_crop[i], offsets_crop[i] + shape_crop[i]) for i in range(len(shape_in))]
         self.crops[shape_in]["slices"] = slices
         return slices
 
@@ -269,12 +235,8 @@ class Resizer(object):
             return scipy.ndimage.zoom(x, (self.factors), mode="nearest")
         ars_resized = list()
         for idx in range(x.shape[self.per_dim]):
-            slices = tuple(
-                [idx if i == self.per_dim else slice(None) for i in range(x.ndim)]
-            )
-            ars_resized.append(
-                scipy.ndimage.zoom(x[slices], self.factors, mode="nearest")
-            )
+            slices = tuple([idx if i == self.per_dim else slice(None) for i in range(x.ndim)])
+            ars_resized.append(scipy.ndimage.zoom(x[slices], self.factors, mode="nearest"))
         return np.stack(ars_resized, axis=self.per_dim)
 
     def __repr__(self):
@@ -375,10 +337,11 @@ def norm_around_center(ar: np.ndarray, z_center: Optional[int] = None):
     ar = ar / chunk.std()
     return ar.astype(np.float32)
 
+
 def norm_min_max(
-        ar: np.ndarray,
-        q: Tuple[float,float] = (0.0, 100.0),
-        zero_center: bool = False,
+    ar: np.ndarray,
+    q: Tuple[float, float] = (0.0, 100.0),
+    zero_center: bool = False,
 ):
     """Returns normalized version of input array.
 
@@ -400,11 +363,9 @@ def norm_min_max(
     ar = np.squeeze(ar)
 
     if ar.ndim != 3:
-        raise ValueError('Input array must be 3d')
+        raise ValueError("Input array must be 3d")
     if ar.shape[0] < 32:
-        raise ValueError(
-            'Input array must be at least length 32 in first dimension'
-        )
+        raise ValueError("Input array must be at least length 32 in first dimension")
 
     ar = ar.astype(np.float32)
     norm_min, norm_max = np.percentile(ar, q=q)
@@ -416,7 +377,7 @@ def norm_min_max(
 
 
 def norm_range(
-        ar: np.ndarray,
+    ar: np.ndarray,
 ):
     """Returns array normalized by dtype range.
 
@@ -432,18 +393,16 @@ def norm_range(
          Nomralized array, dtype = float32
     """
     if ar.ndim != 3:
-        raise ValueError('Input array must be 3d')
+        raise ValueError("Input array must be 3d")
     if ar.shape[0] < 32:
-        raise ValueError(
-            'Input array must be at least length 32 in first dimension'
-        )
-    
+        raise ValueError("Input array must be at least length 32 in first dimension")
+
     ar = ar / np.iinfo(ar.dtype).max
     return ar.astype(np.float32)
 
 
 def norm_threshold(
-        ar: np.ndarray,
+    ar: np.ndarray,
 ):
     """
     Normalizes array by thresholding and standard deviation.
@@ -459,13 +418,11 @@ def norm_threshold(
          Nomralized array, dtype = float32
     """
     ar = np.squeeze(ar)
-    
+
     if ar.ndim != 3:
-        raise ValueError('Input array must be 3d')
+        raise ValueError("Input array must be 3d")
     if ar.shape[0] < 32:
-        raise ValueError(
-            'Input array must be at least length 32 in first dimension'
-        )
+        raise ValueError("Input array must be at least length 32 in first dimension")
 
     thresh = get_threshold_otsu(downscale_and_filter(ar, downscale_factor=1, filter_size=5))
     ar = img_as_float32(ar) if not np.issubdtype(ar.dtype, np.floating) else ar

@@ -7,9 +7,7 @@ import numpy as np
 import torch
 
 
-def corr_coef(
-    a: Union[np.ndarray, torch.Tensor], b: Union[np.ndarray, torch.Tensor]
-) -> float:
+def corr_coef(a: Union[np.ndarray, torch.Tensor], b: Union[np.ndarray, torch.Tensor]) -> float:
     """Calculates the Pearson correlation coefficient between the inputs.
 
     Parameters
@@ -40,9 +38,7 @@ def corr_coef(
     return cc
 
 
-def corr_coef_chan0(
-    a: Union[np.ndarray, torch.Tensor], b: Union[np.ndarray, torch.Tensor]
-) -> float:
+def corr_coef_chan0(a: Union[np.ndarray, torch.Tensor], b: Union[np.ndarray, torch.Tensor]) -> float:
     """Calculates the Pearson correlation coefficient between channel 0 of the
     inputs.
 
@@ -63,6 +59,10 @@ def corr_coef_chan0(
     """
     if a is None or b is None:
         return None
-    a = a[0:1,]
-    b = b[0:1,]
+    a = a[
+        0:1,
+    ]
+    b = b[
+        0:1,
+    ]
     return corr_coef(a, b)

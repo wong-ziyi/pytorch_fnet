@@ -74,9 +74,7 @@ def get_indices(args: argparse.Namespace, dataset: Any) -> List[int]:
     return indices
 
 
-def item_from_dataset(
-    dataset: Any, idx: int
-) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
+def item_from_dataset(dataset: Any, idx: int) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
     """Returns signal-target image pair from dataset.
 
     If the dataset is a FnetDataset, it will be indexed using 'loc'-style
@@ -111,11 +109,11 @@ def item_from_dataset(
 
     # crop to the nearest size divisible by 16
     if signal.shape[2] % 16 != 0:
-        signal = signal[:,:,signal.shape[2]%16//2:0-signal.shape[2]%16//2,:]
-        target = target[:,:,target.shape[2]%16//2:0-target.shape[2]%16//2,:]
+        signal = signal[:, :, signal.shape[2] % 16 // 2 : 0 - signal.shape[2] % 16 // 2, :]
+        target = target[:, :, target.shape[2] % 16 // 2 : 0 - target.shape[2] % 16 // 2, :]
     if signal.shape[3] % 16 != 0:
-        signal = signal[:,:,:,signal.shape[3]%16//2:0-signal.shape[3]%16//2]
-        target = target[:,:,:,target.shape[3]%16//2:0-target.shape[3]%16//2]
+        signal = signal[:, :, :, signal.shape[3] % 16 // 2 : 0 - signal.shape[3] % 16 // 2]
+        target = target[:, :, :, target.shape[3] % 16 // 2 : 0 - target.shape[3] % 16 // 2]
 
     return (signal, target)
 
@@ -146,7 +144,7 @@ def save_tif(fname: str, ar: np.ndarray, path_root: str) -> str:
         logger.info(f"Created: {path_tif_dir}")
     path_save = os.path.join(path_tif_dir, fname)
     # change compression level to default
-#     tifffile.imsave(path_save, ar, compress=2)
+    #     tifffile.imsave(path_save, ar, compress=2)
     tifffile.imwrite(path_save, ar)
     logger.info(f"Saved: {path_save}")
     return os.path.relpath(path_save, path_root)
@@ -168,9 +166,7 @@ def parse_model(model_str: str) -> Dict:
     return model_def
 
 
-def save_predictions_csv(
-    path_csv: Path, pred_records: List[Dict], dataset: Any
-) -> None:
+def save_predictions_csv(path_csv: Path, pred_records: List[Dict], dataset: Any) -> None:
     """Saves csv with metadata of predictions.
 
     Parameters
@@ -227,9 +223,7 @@ def save_args_as_json(path_save_dir: str, args: argparse.Namespace) -> None:
         if not number.isdigit():
             number = "-1"
         number = str(int(number) + 1)
-        path_json = os.path.join(
-            path_save_dir, ".".join(["predict_options", number, "json"])
-        )
+        path_json = os.path.join(path_save_dir, ".".join(["predict_options", number, "json"]))
     with open(path_json, "w") as fo:
         json.dump(vars(args), fo, indent=4, sort_keys=True)
     logger.info(f"Saved: {path_json}")
@@ -243,11 +237,12 @@ def load_from_json(args: argparse.Namespace) -> None:
         predict_options = json.load(fi)
     args.__dict__.update(predict_options)
 
+
 def predict_on_zslice_tiles(model, zimage, tile_size=(512, 512), tile_step=(256, 256)):
 
-    image = zimage[0,0,:,:]
-    print(f'Stack shape:{zimage.shape}')
-    print(f'Slice shape:{image.shape}')
+    image = zimage[0, 0, :, :]
+    print(f"Stack shape:{zimage.shape}")
+    print(f"Slice shape:{image.shape}")
 
     # Cut large image into overlapping tiles
     tiler = ImageSlicer(image.shape, tile_size=(512, 512), tile_step=(256, 256))
@@ -261,17 +256,16 @@ def predict_on_zslice_tiles(model, zimage, tile_size=(512, 512), tile_step=(256,
     merger = CudaTileMerger(tiler.target_shape, 1, tiler.weight)
 
     # Run predictions for tiles and accumulate them
-    for tiles_batch, coords_batch in DataLoader(list(zip(tiles, tiler.crops)),
-                                                batch_size=1, pin_memory=True):
-#         for x, y, tile_width, tile_height in coords_batch:
-#             tile = image[y : y + tile_height, x : x + tile_width].copy()
+    for tiles_batch, coords_batch in DataLoader(list(zip(tiles, tiler.crops)), batch_size=1, pin_memory=True):
+        #         for x, y, tile_width, tile_height in coords_batch:
+        #             tile = image[y : y + tile_height, x : x + tile_width].copy()
         tiles_batch = tiles_batch.float().cuda()
         pred_batch = model(tiles_batch)
 
         merger.integrate_batch(pred_batch, coords_batch)
 
     # Normalize accumulated mask and convert back to numpy
-#     merged_mask = np.moveaxis(to_numpy(merger.merge()), 0, -1).astype(np.uint8)
+    #     merged_mask = np.moveaxis(to_numpy(merger.merge()), 0, -1).astype(np.uint8)
     merged_mask = np.moveaxis(to_numpy(merger.merge()), 0, -1)
     merged_mask = tiler.crop_to_orignal_size(merged_mask)
 
@@ -281,35 +275,17 @@ def predict_on_zslice_tiles(model, zimage, tile_size=(512, 512), tile_step=(256,
 def add_parser_arguments(parser) -> None:
     """Add training script arguments to parser."""
     parser.add_argument("--dataset", help="dataset name")
-    parser.add_argument(
-        "--dataset_kwargs", type=json.loads, default={}, help="dataset kwargs"
-    )
+    parser.add_argument("--dataset_kwargs", type=json.loads, default={}, help="dataset kwargs")
     parser.add_argument("--gpu_ids", type=int, default=0, help="GPU ID")
-    parser.add_argument(
-        "--idx_sel", nargs="+", type=int, help="specify dataset indices"
-    )
+    parser.add_argument("--idx_sel", nargs="+", type=int, help="specify dataset indices")
     parser.add_argument("--json", type=Path, help="path to prediction options json")
-    parser.add_argument(
-        "--metric", default="fnet.metrics.corr_coef", help="evaluation metric"
-    )
-    parser.add_argument(
-        "--n_images", type=int, default=-1, help="max number of images to test"
-    )
-    parser.add_argument(
-        "--no_prediction", action="store_true", help="set to not save predicted image"
-    )
-    parser.add_argument(
-        "--no_signal", action="store_true", help="set to not save signal image"
-    )
-    parser.add_argument(
-        "--no_target", action="store_true", help="set to not save target image"
-    )
-    parser.add_argument(
-        "--path_model_dir", nargs="+", help="path(s) to model directory"
-    )
-    parser.add_argument(
-        "--path_save_dir", default="predictions", help="path to output root directory"
-    )
+    parser.add_argument("--metric", default="fnet.metrics.corr_coef", help="evaluation metric")
+    parser.add_argument("--n_images", type=int, default=-1, help="max number of images to test")
+    parser.add_argument("--no_prediction", action="store_true", help="set to not save predicted image")
+    parser.add_argument("--no_signal", action="store_true", help="set to not save signal image")
+    parser.add_argument("--no_target", action="store_true", help="set to not save target image")
+    parser.add_argument("--path_model_dir", nargs="+", help="path(s) to model directory")
+    parser.add_argument("--path_save_dir", default="predictions", help="path to output root directory")
     parser.add_argument("--path_tif", help="path(s) to input tif(s)")
 
 
@@ -335,11 +311,19 @@ def main(args: Optional[argparse.Namespace] = None) -> None:
         signal, target = item_from_dataset(dataset, idx)
         if not args.no_signal:
             entry["path_signal"] = save_tif(
-                f"{idx}_signal.tif", signal.numpy()[0,], args.path_save_dir
+                f"{idx}_signal.tif",
+                signal.numpy()[
+                    0,
+                ],
+                args.path_save_dir,
             )
         if not args.no_target and target is not None:
             entry["path_target"] = save_tif(
-                f"{idx}_target.tif", target.numpy()[0,], args.path_save_dir
+                f"{idx}_target.tif",
+                target.numpy()[
+                    0,
+                ],
+                args.path_save_dir,
             )
         for path_model_dir in args.path_model_dir:
             if model is None or len(args.path_model_dir) > 1:
@@ -347,28 +331,28 @@ def main(args: Optional[argparse.Namespace] = None) -> None:
                 model = load_model(model_def["path"], no_optim=True)
                 model.to_gpu(args.gpu_ids)
                 logger.info(f'Loaded model: {model_def["name"]}')
-            import pdb; pdb.set_trace()
-            prediction = model.predict_piecewise(
-                signal, tta=("no_tta" not in model_def["options"])
-            )
-#             signal = to_numpy(signal)
-#             print(signal.shape)
-#             print(signal.shape[1])
+            import pdb
 
-#             network = model.net
-#             network.eval()
-#             with torch.no_grad():
-#                 prediction = predict_on_zslice_tiles(network, signal)
+            pdb.set_trace()
+            prediction = model.predict_piecewise(signal, tta=("no_tta" not in model_def["options"]))
+            #             signal = to_numpy(signal)
+            #             print(signal.shape)
+            #             print(signal.shape[1])
+
+            #             network = model.net
+            #             network.eval()
+            #             with torch.no_grad():
+            #                 prediction = predict_on_zslice_tiles(network, signal)
 
             evaluation = metric(target, prediction)
             entry[args.metric + f'.{model_def["name"]}'] = evaluation
             if not args.no_prediction:
                 for idx_c in range(prediction.size()[0]):
                     tag = f'prediction_c{idx_c}.{model_def["name"]}'
-                    pred_c = prediction.numpy()[idx_c,]
-                    entry[f"path_{tag}"] = save_tif(
-                        f"{idx}_{tag}.tif", pred_c, args.path_save_dir
-                    )
+                    pred_c = prediction.numpy()[
+                        idx_c,
+                    ]
+                    entry[f"path_{tag}"] = save_tif(f"{idx}_{tag}.tif", pred_c, args.path_save_dir)
         entries.append(entry)
         save_predictions_csv(
             path_csv=os.path.join(args.path_save_dir, "predictions.csv"),

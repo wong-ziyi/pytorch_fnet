@@ -64,7 +64,9 @@ def test_apply_on_single_zstack(tmp_path):
 
     # Test numpy input and file path input
     yhat_ch1 = model.apply_on_single_zstack(ar_in, inputCh=1)
-    ar_in = ar_in[1,]
+    ar_in = ar_in[
+        1,
+    ]
     path_input_save = tmp_path / "input_save.tiff"
     tifffile.imsave(str(path_input_save), ar_in, compress=2)
     yhat = model.apply_on_single_zstack(ar_in)
@@ -105,9 +107,7 @@ def test_train_on_batch():
     model = Model(nn_class="fnet.tests.data.nn_test.Net", lr=0.0)  # disable learning
     cost_norm = model.train_on_batch(x_batch, y_batch)
     # Test uniform weight map
-    weight_map_batch = (torch.ones(shape_item) / np.prod(shape_item)).expand(
-        shape_batch
-    )
+    weight_map_batch = (torch.ones(shape_item) / np.prod(shape_item)).expand(shape_batch)
     cost_weighted = model.train_on_batch(x_batch, y_batch, weight_map_batch)
     npt.assert_approx_equal(cost_weighted, cost_norm, significant=6)
     # Test all-zero weight map
@@ -139,9 +139,7 @@ def test_test_on_batch():
     npt.assert_approx_equal(loss_1 - loss_0, 0.0)
 
     # Loss should remain the same with uniform weight map
-    loss_weight_uniform = model.test_on_batch(
-        x_batch, y_batch, torch.ones(shape_batch) / np.prod(shape_item)
-    )
+    loss_weight_uniform = model.test_on_batch(x_batch, y_batch, torch.ones(shape_batch) / np.prod(shape_item))
     npt.assert_almost_equal(loss_weight_uniform - loss_0, 0.0)
 
     # Loss should be zero with all-zero weight map

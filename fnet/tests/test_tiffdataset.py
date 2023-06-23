@@ -7,15 +7,11 @@ from fnet.data import tiffdataset
 from .data.testlib import create_tif_data
 
 
-@pytest.mark.parametrize(
-    "shape,weights", [((16, 32), False), ((8, 16, 32), False), ((8, 16, 32), True)]
-)
+@pytest.mark.parametrize("shape,weights", [((16, 32), False), ((8, 16, 32), False), ((8, 16, 32), True)])
 def test_TiffDataset(tmp_path, shape: Sequence[int], weights: bool):
     """Tests TiffDataset class."""
     n_items = 5
-    path_dummy = create_tif_data(
-        tmp_path, shape=shape, n_items=n_items, weights=weights
-    )
+    path_dummy = create_tif_data(tmp_path, shape=shape, n_items=n_items, weights=weights)
     ds = tiffdataset.TiffDataset(path_csv=path_dummy, col_index="dummy_id")
     assert len(ds) == n_items
     idx = n_items // 2

@@ -88,7 +88,5 @@ class FnetDataset(torch.utils.data.Dataset):
         return self._metadata
 
     def get_information(self, index) -> Union[dict, str]:
-        """Returns information to identify dataset element specified by index.
-
-        """
+        """Returns information to identify dataset element specified by index."""
         raise NotImplementedError

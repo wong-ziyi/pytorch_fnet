@@ -59,9 +59,7 @@ class BufferedPatchDataset:
     def __next__(self):
         patch = self.get_random_patch()
         self.counter += 1
-        if (self.buffer_switch_interval > 0) and (
-            self.counter % self.buffer_switch_interval == 0
-        ):
+        if (self.buffer_switch_interval > 0) and (self.counter % self.buffer_switch_interval == 0):
             self.insert_new_element_into_buffer()
         return patch
 
@@ -79,9 +77,7 @@ class BufferedPatchDataset:
                     f"{component.shape} incompatible with first component "
                     f"shape {self.buffer[-1][0].shape}"
                 )
-            if nd > len(component.shape) or any(
-                self.patch_shape[d] > shape_spatial[d] for d in range(nd)
-            ):
+            if nd > len(component.shape) or any(self.patch_shape[d] > shape_spatial[d] for d in range(nd)):
                 raise ValueError(
                     f"Dataset item {idx_buf}, component {idx_c} shape "
                     f"{component.shape} incompatible with patch_shape "
@@ -130,12 +126,7 @@ class BufferedPatchDataset:
         slices = None
         for part in datum:
             if slices is None:
-                starts = np.array(
-                    [
-                        np.random.randint(0, d - p + 1)
-                        for d, p in zip(shape_spatial, self.patch_shape)
-                    ]
-                )
+                starts = np.array([np.random.randint(0, d - p + 1) for d, p in zip(shape_spatial, self.patch_shape)])
                 ends = starts + np.array(self.patch_shape)
                 slices = tuple(slice(s, e) for s, e in zip(starts, ends))
             # Pad slices with "slice(None)" if there are non-spatial dimensions
@@ -157,10 +148,7 @@ class BufferedPatchDataset:
             Batch of patches.
 
         """
-        return tuple(
-            torch.tensor(np.stack(part))
-            for part in zip(*[next(self) for _ in range(batch_size)])
-        )
+        return tuple(torch.tensor(np.stack(part)) for part in zip(*[next(self) for _ in range(batch_size)]))
 
     def get_buffer_history(self) -> List[int]:
         """Returns a list of indices of dataset elements inserted into the

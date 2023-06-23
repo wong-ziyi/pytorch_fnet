@@ -69,13 +69,7 @@ extra_requirements = {
     "dev": dev_requirements,
     "interactive": interactive_requirements,
     "examples": examples_requirements,
-    "all": [
-        *requirements,
-        *test_requirements,
-        *setup_requirements,
-        *dev_requirements,
-        *interactive_requirements
-    ]
+    "all": [*requirements, *test_requirements, *setup_requirements, *dev_requirements, *interactive_requirements],
 }
 
 setup(
@@ -90,8 +84,7 @@ setup(
         "Programming Language :: Python :: 3.6",
         "Programming Language :: Python :: 3.7",
     ],
-    description="A machine learning model for transforming microsocpy images between "
-    "modalities",
+    description="A machine learning model for transforming microsocpy images between " "modalities",
     entry_points={
         "console_scripts": ["fnet = fnet.cli.main:main"],
     },

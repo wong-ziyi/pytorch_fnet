@@ -14,9 +14,7 @@ parser = argparse.ArgumentParser()
 
 parser.add_argument("--gpu_id", default=0, type=int, help="GPU to use.")
 parser.add_argument("--n_imgs", default=50, type=int, help="Number of images to use.")
-parser.add_argument(
-    "--n_iterations", default=50000, type=int, help="Number of training iterations."
-)
+parser.add_argument("--n_iterations", default=50000, type=int, help="Number of training iterations.")
 parser.add_argument(
     "--interval_checkpoint",
     default=10000,
@@ -32,7 +30,7 @@ args = parser.parse_args()
 
 gpu_id = args.gpu_id
 n_images_to_download = args.n_imgs  # more images the better
-train_fraction = 0.6 # see Supplementary Table 1
+train_fraction = 0.6  # see Supplementary Table 1
 
 image_save_dir = "{}/".format(os.getcwd())
 model_save_dir = "{}/model/".format(os.getcwd())
@@ -45,16 +43,14 @@ if not os.path.exists(image_save_dir):
     os.makedirs(image_save_dir)
 
 
-aics_pipeline = quilt3.Package.browse(
-    "aics/pipeline_integrated_cell", registry="s3://allencell"
-)
+aics_pipeline = quilt3.Package.browse("aics/pipeline_integrated_cell", registry="s3://allencell")
 
 data_manifest = aics_pipeline["metadata.csv"]()
 
-data_manifest.to_csv('metadata.csv')
+data_manifest.to_csv("metadata.csv")
 
 # THE ROWS OF THE MANIFEST CORRESPOND TO CELLS, WE TRIM DOWN TO UNIQUIE FOVS
-unique_fov_indices = np.unique(data_manifest['FOVId'], return_index=True)[1]
+unique_fov_indices = np.unique(data_manifest["FOVId"], return_index=True)[1]
 data_manifest = data_manifest.iloc[unique_fov_indices]
 
 # SELECT THE FIRST N_IMAGES_TO_DOWNLOAD
@@ -62,10 +58,7 @@ data_manifest = data_manifest.iloc[0:n_images_to_download]
 
 image_source_paths = data_manifest["SourceReadPath"]
 
-image_target_paths = [
-    "{}/{}".format(image_save_dir, image_source_path)
-    for image_source_path in image_source_paths
-]
+image_target_paths = ["{}/{}".format(image_save_dir, image_source_path) for image_source_path in image_source_paths]
 
 for image_source_path, image_target_path in zip(image_source_paths, image_target_paths):
     if os.path.exists(image_target_path):
@@ -115,13 +108,13 @@ prefs["dataset_train_kwargs"] = {
     "path_csv": data_save_path_train,
     "transform_signal": ["fnet.transforms.normalize"],
     "transform_target": ["fnet.transforms.normalize"],
-    }
+}
 prefs["dataset_val"] = "fnet.data.MultiChTiffDataset"
 prefs["dataset_val_kwargs"] = {
     "path_csv": data_save_path_test,
     "transform_signal": ["fnet.transforms.normalize"],
     "transform_target": ["fnet.transforms.normalize"],
-    }
+}
 
 # prefs["fnet_model_kwargs"] = {
 #         "betas": [

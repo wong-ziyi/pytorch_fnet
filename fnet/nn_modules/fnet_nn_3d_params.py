@@ -1,18 +1,18 @@
 import torch
 
-from functools import partial
-
 
 class Net(torch.nn.Module):
     def __init__(
-            self, depth=4,
-            mult_chan=32,
-            dilate=1,
-            in_channels=1,
-            out_channels=1,
-            norm="batch",
-            groups=None
-        ):
+        self,
+        depth=4,
+        mult_chan=32,
+        dilate=1,
+        in_channels=1,
+        out_channels=1,
+        activation="relu",
+        norm="batch",
+        groups=None,
+    ):
         super().__init__()
         self.depth = depth
         self.mult_chan = mult_chan
@@ -20,11 +20,22 @@ class Net(torch.nn.Module):
         self.in_channels = in_channels
         self.out_channels = out_channels
         self.groups = groups
-        
+
+        if activation == "relu":
+            self.activation = torch.nn.ReLU(inplace=True)
+        elif activation == "elu":
+            self.activation = torch.nn.ELU(inplace=True)
+        elif activation == "selu":
+            self.activation = torch.nn.SELU(inplace=True)
+        elif activation == "silu":
+            self.activation = torch.nn.SiLU(inplace=True)
+
         if norm == "batch":
             self.norm = torch.nn.BatchNorm3d
         elif norm == "instance":
             self.norm = torch.nn.InstanceNorm3d
+        elif norm == "layer":
+            self.norm = torch.nn.LayerNorm
         elif norm == "group" and groups is not None:
             self.norm = torch.nn.GroupNorm
         else:
@@ -35,13 +46,12 @@ class Net(torch.nn.Module):
             mult_chan=self.mult_chan,
             depth_parent=self.depth,
             depth=self.depth,
-            dilate = self.dilate,
+            dilate=self.dilate,
+            activation_fn=self.activation,
             norm_fn=self.norm,
-            groups=self.groups
+            groups=self.groups,
         )
-        self.conv_out = torch.nn.Conv3d(
-            self.mult_chan, self.out_channels, kernel_size=3, padding=1
-        )
+        self.conv_out = torch.nn.Conv3d(self.mult_chan, self.out_channels, kernel_size=3, padding=1)
 
     def forward(self, x):
         x_rec = self.net_recurse(x)
@@ -49,7 +59,17 @@ class Net(torch.nn.Module):
 
 
 class _Net_recurse(torch.nn.Module):
-    def __init__(self, n_in_channels, mult_chan=2, depth_parent=0, depth=0, dilate=1, norm_fn=None, groups=None):
+    def __init__(
+        self,
+        n_in_channels,
+        mult_chan=2,
+        depth_parent=0,
+        depth=0,
+        dilate=1,
+        activation_fn=None,
+        norm_fn=None,
+        groups=None,
+    ):
         """Class for recursive definition of U-network.
 
         Parameters
@@ -69,6 +89,7 @@ class _Net_recurse(torch.nn.Module):
 
         self.depth = depth
         self.norm = norm_fn or torch.nn.BatchNorm3d
+        self.activation = activation_fn or torch.nn.ReLU(inplace=True)
 
         if self.depth == depth_parent:
             n_out_channels = mult_chan
@@ -76,34 +97,41 @@ class _Net_recurse(torch.nn.Module):
             n_out_channels = n_in_channels * mult_chan
 
         if depth == 0:
-            self.sub_2conv_more = DilatedBottleneck(n_in_channels, n_out_channels, depth=dilate, norm_fn=self.norm, groups=groups)
-        
+            self.sub_2conv_more = DilatedBottleneck(
+                n_in_channels,
+                n_out_channels,
+                depth=dilate,
+                activation_fn=self.activation,
+                norm_fn=self.norm,
+                groups=groups,
+            )
+
         elif depth > 0:
             if groups is not None:
                 groups = 1 if n_out_channels < groups else groups
-                self.bn0 = norm_fn(groups, n_out_channels)
-                self.bn1 = norm_fn(groups, n_out_channels)
+                self.bn0 = self.norm(groups, n_out_channels)
+                self.bn1 = self.norm(groups, n_out_channels)
             else:
-                self.bn0 = norm_fn(n_out_channels)
-                self.bn1 = norm_fn(n_out_channels)
+                self.bn0 = self.norm(n_out_channels)
+                self.bn1 = self.norm(n_out_channels)
 
-            self.sub_2conv_more = SubNet2Conv(n_in_channels, n_out_channels, norm_fn=self.norm, groups=groups)
-            self.sub_2conv_less = SubNet2Conv(2 * n_out_channels, n_out_channels, norm_fn=self.norm, groups=groups)
-            self.conv_down = torch.nn.Conv3d(
-                n_out_channels, n_out_channels, 2, stride=2
+            self.sub_2conv_more = SubNet2Conv(
+                n_in_channels, n_out_channels, activation_fn=self.activation, norm_fn=self.norm, groups=groups
             )
-            self.relu0 = torch.nn.ReLU(inplace=True)
-            self.convt = torch.nn.ConvTranspose3d(
-                2 * n_out_channels, n_out_channels, kernel_size=2, stride=2
+            self.sub_2conv_less = SubNet2Conv(
+                2 * n_out_channels, n_out_channels, activation_fn=self.activation, norm_fn=self.norm, groups=groups
             )
-            self.relu1 = torch.nn.ReLU(inplace=True)
+            self.conv_down = torch.nn.Conv3d(n_out_channels, n_out_channels, 2, stride=2)
+            self.relu0 = self.activation
+            self.convt = torch.nn.ConvTranspose3d(2 * n_out_channels, n_out_channels, kernel_size=2, stride=2)
+            self.relu1 = self.activation
             self.sub_u = _Net_recurse(
                 n_out_channels,
                 mult_chan=2,
                 depth_parent=depth_parent,
                 depth=(depth - 1),
                 norm_fn=self.norm,
-                groups=groups
+                groups=groups,
             )
 
     def forward(self, x):
@@ -125,9 +153,11 @@ class _Net_recurse(torch.nn.Module):
 
 
 class SubNet2Conv(torch.nn.Module):
-    def __init__(self, n_in, n_out, norm_fn=None, groups=None):
+    def __init__(self, n_in, n_out, activation_fn=None, norm_fn=None, groups=None):
         super().__init__()
         norm_fn = norm_fn or torch.nn.BatchNorm3d
+        activation_fn = activation_fn or torch.nn.ReLU(inplace=True)
+
         if groups is not None:
             groups = 1 if n_in < groups else groups
             self.bn1 = norm_fn(groups, n_out)
@@ -137,9 +167,9 @@ class SubNet2Conv(torch.nn.Module):
             self.bn2 = norm_fn(n_out)
 
         self.conv1 = torch.nn.Conv3d(n_in, n_out, kernel_size=3, padding=1)
-        self.relu1 = torch.nn.ReLU(inplace=True)
+        self.relu1 = activation_fn
         self.conv2 = torch.nn.Conv3d(n_out, n_out, kernel_size=3, padding=1)
-        self.relu2 = torch.nn.ReLU(inplace=True)
+        self.relu2 = activation_fn
 
     def forward(self, x):
         x = self.conv1(x)
@@ -152,23 +182,25 @@ class SubNet2Conv(torch.nn.Module):
 
 
 class DilatedBottleneck(torch.nn.Module):
-    def __init__(self, n_in, n_out, depth=4, norm_fn=None, groups=None):
+    def __init__(self, n_in, n_out, depth=4, activation_fn=None, norm_fn=None, groups=None):
         super().__init__()
         norm_fn = norm_fn or torch.nn.BatchNorm3d
+        activation_fn = activation_fn or torch.nn.ReLU(inplace=True)
+
         if groups is not None:
             groups = 1 if n_in < groups else groups
             norm_fn = norm_fn(groups, n_out)
         else:
             norm_fn = norm_fn(n_out)
-        
+
         for i in range(depth):
-            dilate = 2 ** i
+            dilate = 2**i
             model = [
                 torch.nn.Conv3d(n_in, n_out, kernel_size=3, padding=dilate, dilation=dilate),
                 norm_fn,
-                torch.nn.ReLU(inplace=True)
+                activation_fn,
             ]
-            self.add_module('bottleneck%d' % (i + 1), torch.nn.Sequential(*model))
+            self.add_module("bottleneck%d" % (i + 1), torch.nn.Sequential(*model))
             if i == 0:
                 n_in = n_out
 

@@ -15,9 +15,7 @@ def create_data_dir(path_root: Path):
     return path_data
 
 
-def create_tif_data(
-    path_root: Path, shape: Sequence[int], n_items: int, weights: bool
-) -> Path:
+def create_tif_data(path_root: Path, shape: Sequence[int], n_items: int, weights: bool) -> Path:
     path_data = create_data_dir(path_root)
 
     records = []
@@ -59,9 +57,7 @@ def create_multichtiff_data(
 
     for idx in range(n_items):
         path_x = path_data / f"{idx:02}.tif"
-        data_x = np.random.randint(
-            128, size=[n_ch_in + n_ch_out] + list(dims_zyx), dtype=np.uint8
-        )
+        data_x = np.random.randint(128, size=[n_ch_in + n_ch_out] + list(dims_zyx), dtype=np.uint8)
 
         with OmeTiffWriter(path_x) as writer:
             writer.save(data_x, dimension_order="CZYX")  # should be a numpy array

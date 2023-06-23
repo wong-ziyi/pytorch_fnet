@@ -24,24 +24,19 @@ class MultiChTiffDataset(FnetDataset):
         # if this column is a string assume it is in "[ind_1, ind_2, ..., ind_n]" format
         if isinstance(self.df["channel_signal"][0], str):
             self.df["channel_signal"] = [
-                np.fromstring(ch[1:-1], sep=", ").astype(int)
-                for ch in self.df["channel_signal"]
+                np.fromstring(ch[1:-1], sep=", ").astype(int) for ch in self.df["channel_signal"]
             ]
         else:
             self.df["channel_signal"] = [[int(ch)] for ch in self.df["channel_signal"]]
 
         if isinstance(self.df["channel_target"][0], str):
             self.df["channel_target"] = [
-                np.fromstring(ch[1:-1], sep=", ").astype(int)
-                for ch in self.df["channel_target"]
+                np.fromstring(ch[1:-1], sep=", ").astype(int) for ch in self.df["channel_target"]
             ]
         else:
             self.df["channel_target"] = [[int(ch)] for ch in self.df["channel_target"]]
 
-        assert all(
-            i in self.df.columns
-            for i in ["path_tiff", "channel_signal", "channel_target"]
-        )
+        assert all(i in self.df.columns for i in ["path_tiff", "channel_signal", "channel_target"])
 
     def __getitem__(self, index):
         """

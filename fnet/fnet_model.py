@@ -68,9 +68,7 @@ def get_per_param_options(module, wd):
 
 
 class Model:
-    """Class that encompasses a pytorch network and its optimizer.
-
-    """
+    """Class that encompasses a pytorch network and its optimizer."""
 
     def __init__(
         self,
@@ -99,11 +97,7 @@ class Model:
 
         self.count_iter = 0
         self.best_loss_val = float("inf")
-        self.device = (
-            torch.device("cuda", self.gpu_ids[0])
-            if self.gpu_ids[0] >= 0
-            else torch.device("cpu")
-        )
+        self.device = torch.device("cuda", self.gpu_ids[0]) if self.gpu_ids[0] >= 0 else torch.device("cpu")
         self.optimizer = None
         self._init_model()
         self.fnet_model_kwargs, self.fnet_model_posargs = get_args()
@@ -124,17 +118,11 @@ class Model:
                 period = self.scheduler[1]
                 self.scheduler = torch.optim.lr_scheduler.LambdaLR(
                     self.optimizer,
-                    lambda x: (
-                        0.01
-                        + (1 - 0.01)
-                        * (0.5 + 0.5 * math.cos(math.pi * (x % period) / period))
-                    ),
+                    lambda x: (0.01 + (1 - 0.01) * (0.5 + 0.5 * math.cos(math.pi * (x % period) / period))),
                 )
             elif self.scheduler[0] == "step":
                 step_size = self.scheduler[1]
-                self.scheduler = torch.optim.lr_scheduler.StepLR(
-                    self.optimizer, step_size
-                )
+                self.scheduler = torch.optim.lr_scheduler.StepLR(self.optimizer, step_size)
             else:
                 raise NotImplementedError
 
@@ -171,11 +159,7 @@ class Model:
         if isinstance(gpu_ids, int):
             gpu_ids = [gpu_ids]
         self.gpu_ids = gpu_ids
-        self.device = (
-            torch.device("cuda", self.gpu_ids[0])
-            if self.gpu_ids[0] >= 0
-            else torch.device("cpu")
-        )
+        self.device = torch.device("cuda", self.gpu_ids[0]) if self.gpu_ids[0] >= 0 else torch.device("cpu")
         self.net.to(self.device)
         if self.optimizer is not None:
             move_optim(self.optimizer, self.device)
@@ -271,9 +255,7 @@ class Model:
                 y_hat_batch_mean = np.zeros(y_hat_batch.shape, dtype=np.float32)
             y_hat_batch_mean += y_hat_batch
         y_hat_batch_mean /= len(augs)
-        return torch.tensor(
-            y_hat_batch_mean, dtype=torch.float32, device=torch.device("cpu")
-        )
+        return torch.tensor(y_hat_batch_mean, dtype=torch.float32, device=torch.device("cpu"))
 
     def predict_on_batch(self, x_batch: torch.Tensor) -> torch.Tensor:
         """Performs model prediction on a batch of data.
@@ -305,9 +287,7 @@ class Model:
 
         return y_hat_batch
 
-    def predict(
-        self, x: Union[torch.Tensor, np.ndarray], tta: bool = False
-    ) -> torch.Tensor:
+    def predict(self, x: Union[torch.Tensor, np.ndarray], tta: bool = False) -> torch.Tensor:
         """Performs model prediction on a single example.
 
         Parameters
@@ -331,9 +311,7 @@ class Model:
             return self._predict_on_batch_tta(x_batch).cpu().squeeze(0)
         return self.predict_on_batch(x_batch).cpu().squeeze(0)
 
-    def predict_piecewise(
-        self, x: Union[torch.Tensor, np.ndarray], **predict_kwargs
-    ) -> torch.Tensor:
+    def predict_piecewise(self, x: Union[torch.Tensor, np.ndarray], **predict_kwargs) -> torch.Tensor:
         """Performs model prediction piecewise on a single example.
 
         Predicts on patches of the input and stitchs together the predictions.
@@ -357,9 +335,7 @@ class Model:
             dims_max = [None, 32, 512, 512]
         elif len(x.size()) == 3:
             dims_max = [None, 1024, 1024]
-        y_hat = _predict_piecewise_fn(
-            self, x, dims_max=dims_max, overlaps=16, **predict_kwargs
-        )
+        y_hat = _predict_piecewise_fn(self, x, dims_max=dims_max, overlaps=16, **predict_kwargs)
         return y_hat
 
     def test_on_batch(
@@ -468,15 +444,15 @@ class Model:
         return evaluation, y_hat
 
     def apply_on_single_zstack(
-            self,
-            input_img: Optional[np.ndarray] = None,
-            filename: Optional[Union[Path, str]] = None,
-            inputCh: Optional[int] = None,
-            normalization: Optional[Callable] = None,
-            already_normalized: bool = False,
-            ResizeRatio: Optional[Sequence[float]] = None,
-            cutoff: Optional[float] = None,
-            use_tta: bool = True,
+        self,
+        input_img: Optional[np.ndarray] = None,
+        filename: Optional[Union[Path, str]] = None,
+        inputCh: Optional[int] = None,
+        normalization: Optional[Callable] = None,
+        already_normalized: bool = False,
+        ResizeRatio: Optional[Sequence[float]] = None,
+        cutoff: Optional[float] = None,
+        use_tta: bool = True,
     ) -> np.ndarray:
         """Applies model to a single z-stack input.
 
@@ -525,7 +501,9 @@ class Model:
         if inputCh is not None:
             if input_img.ndim != 4:
                 raise ValueError("input_img must be 4d if inputCh specified")
-            input_img = input_img[inputCh,]
+            input_img = input_img[
+                inputCh,
+            ]
         if input_img.ndim != 3:
             raise ValueError("input_img must be 3d")
         normalization = normalization or norm_around_center
@@ -536,7 +514,12 @@ class Model:
                 raise ValueError("ResizeRatio must be length 3")
             input_img = zoom(input_img, zoom=ResizeRatio, mode="nearest")
         yhat = (
-            self.predict_piecewise(input_img[np.newaxis, ], tta=use_tta)
+            self.predict_piecewise(
+                input_img[
+                    np.newaxis,
+                ],
+                tta=use_tta,
+            )
             .squeeze(dim=0)
             .numpy()
         )

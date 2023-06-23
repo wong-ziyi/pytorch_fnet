@@ -13,9 +13,7 @@ import pandas as pd
 logger = logging.getLogger(__name__)
 
 
-def files_from_dir(
-    path_dir: str, extensions: Optional[Sequence[str]] = None
-) -> List[str]:
+def files_from_dir(path_dir: str, extensions: Optional[Sequence[str]] = None) -> List[str]:
     """Returns sorted list of files in a directory with optional extension(s).
 
     Parameters
@@ -160,9 +158,7 @@ def add_augmentations(df: pd.DataFrame) -> pd.DataFrame:
     df_flip_x = df.assign(flip_x=1)
     df_both = df.assign(flip_y=1, flip_x=1)
     name_index = df.index.name
-    df_aug = pd.concat(
-        [df, df_flip_y, df_flip_x, df_both], ignore_index=True, sort=False
-    ).rename_axis(name_index)
+    df_aug = pd.concat([df, df_flip_y, df_flip_x, df_both], ignore_index=True, sort=False).rename_axis(name_index)
     return df_aug
 
 

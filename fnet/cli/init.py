@@ -22,9 +22,7 @@ def save_example_scripts(path_save_dir: str) -> None:
     """
     if not os.path.exists(path_save_dir):
         os.makedirs(path_save_dir)
-    path_examples_dir = os.path.join(
-        os.path.dirname(sys.modules["fnet"].__file__), "cli"
-    )
+    path_examples_dir = os.path.join(os.path.dirname(sys.modules["fnet"].__file__), "cli")
     for fname in ["train_model.py", "predict.py"]:
         path_src = os.path.join(path_examples_dir, fname)
         path_dst = os.path.join(path_save_dir, fname)

@@ -71,9 +71,7 @@ def test_train_model_pred():
     """Verify 'fnet train', 'fnet predict' functionality on an FnetDataset."""
     path_test_json = Path(__file__).parent / "data" / "train_options_test.json"
 
-    subprocess.run(
-        ["fnet", "train", "--json", path_test_json, "--gpu_ids", "-1"], check=True
-    )
+    subprocess.run(["fnet", "train", "--json", path_test_json, "--gpu_ids", "-1"], check=True)
     assert os.path.exists("test_model")
     subprocess.run(
         [
@@ -97,13 +95,9 @@ def test_train_model_pred():
 
 @pytest.mark.usefixtures("project_dir")
 def test_train_model_pred_custom():
-    """Verify 'fnet train', 'fnet predict' functionality on a custom dataset.
-
-    """
+    """Verify 'fnet train', 'fnet predict' functionality on a custom dataset."""
     path_test_json = Path(__file__).parent / "data" / "train_options_custom.json"
-    subprocess.run(
-        ["fnet", "train", "--json", str(path_test_json), "--gpu_ids", "-1"], check=True
-    )
+    subprocess.run(["fnet", "train", "--json", str(path_test_json), "--gpu_ids", "-1"], check=True)
     assert os.path.exists("test_model_custom")
     subprocess.run(
         [
@@ -129,9 +123,7 @@ def train_pred_with_weights(tmp_path):
     n_items = 8
     path_ds = create_tif_data(tmp_path, shape=shape, n_items=n_items, weights=True)
     path_train_json = tmp_path / "model" / "train_options.json"
-    subprocess.run(
-        ["fnet", "train", str(path_train_json), "--gpu_ids", "-1"], check=True
-    )
+    subprocess.run(["fnet", "train", str(path_train_json), "--gpu_ids", "-1"], check=True)
     _update_json(
         path_train_json,
         dataset_train="fnet.data.TiffDataset",
@@ -143,6 +135,4 @@ def train_pred_with_weights(tmp_path):
         interval_save=8,
         fnet_model_kwargs={"nn_class": "tests.data.nn_test.Net"},
     )
-    subprocess.run(
-        ["fnet", "train", str(path_train_json), "--gpu_ids", "-1"], check=True
-    )
+    subprocess.run(["fnet", "train", str(path_train_json), "--gpu_ids", "-1"], check=True)

@@ -19,10 +19,7 @@ def main() -> None:
     subparser = parser.add_subparsers(title="command")
     parser_init = subparser.add_parser(
         "init",
-        help=(
-            "Initialize current directory with example fnet scripts and "
-            "training options template."
-        ),
+        help=("Initialize current directory with example fnet scripts and " "training options template."),
     )
     parser_train = subparser.add_parser("train", help="Train a model.")
     parser_predict = subparser.add_parser("predict", help="Predict using a model.")

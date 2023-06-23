@@ -44,9 +44,7 @@ def get_shape_from_metadata(metadata):
 
 
 class CziReader:
-    """Wraps czifile.CziFile.
-
-    """
+    """Wraps czifile.CziFile."""
 
     def __init__(self, path_czi):
         with czifile.CziFile(path_czi) as czi:
@@ -70,7 +68,7 @@ class CziReader:
             dim = entry.attrib.get("Id")
             if (dim is not None) and (dim.lower() in "zyx"):
                 # convert from m/px to um/px
-                scale = 10 ** 6 * float(get_czi_metadata(entry, ["Value"])[0].text)
+                scale = 10**6 * float(get_czi_metadata(entry, ["Value"])[0].text)
                 dict_scales[dim.lower()] = scale
         return dict_scales
 

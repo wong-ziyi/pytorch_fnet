@@ -43,11 +43,7 @@ class FnetEnsemble(Model):
         if isinstance(paths_model, str):
             assert os.path.isdir(paths_model)
             paths_model = sorted(
-                [
-                    p.path
-                    for p in os.scandir(os.path.abspath(paths_model))
-                    if p.path.lower().endswith(".p")
-                ]
+                [p.path for p in os.scandir(os.path.abspath(paths_model)) if p.path.lower().endswith(".p")]
             )
         assert len(paths_model) > 0
         self.paths_model = paths_model
@@ -72,9 +68,7 @@ class FnetEnsemble(Model):
             gpu_ids = [gpu_ids]
         self.gpu_ids = gpu_ids
 
-    def predict(
-        self, x: Union[torch.Tensor, np.ndarray], tta: bool = False
-    ) -> torch.Tensor:
+    def predict(self, x: Union[torch.Tensor, np.ndarray], tta: bool = False) -> torch.Tensor:
         """Performs model prediction.
 
         Parameters
