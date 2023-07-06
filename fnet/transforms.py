@@ -428,3 +428,41 @@ def norm_threshold(
     ar = img_as_float32(ar) if not np.issubdtype(ar.dtype, np.floating) else ar
     ar = (ar - thresh) / ar.std()
     return ar.astype(np.float32)
+
+
+def norm_foreground(
+    ar: np.ndarray,
+    center: str = "thresh",
+):
+    """
+    Normalizes array by foreground min/mean and std.
+
+    Parameters
+    ----------
+    ar
+        Input 3d array to be normalized.
+
+    Returns
+    -------
+    np.ndarray
+         Nomralized array, dtype = float32
+    """
+    ar = np.squeeze(ar)
+
+    if ar.ndim != 3:
+        raise ValueError("Input array must be 3d")
+    if ar.shape[0] < 32:
+        raise ValueError("Input array must be at least length 32 in first dimension")
+
+    ar = img_as_float32(ar) if not np.issubdtype(ar.dtype, np.floating) else ar
+    thresh = get_threshold_otsu(downscale_and_filter(ar, downscale_factor=1, filter_size=5))
+    foreground = ar[ar>thresh]
+    
+    if center == "thresh":
+        ar = (ar - thresh) / foreground.std()
+    elif center == "mean":
+        ar = (ar - foreground.mean()) / foreground.std()
+    else:
+        raise Exception("center has to be either mean or thresh")
+
+    return ar.astype(np.float32)
