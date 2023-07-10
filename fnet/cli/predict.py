@@ -331,9 +331,9 @@ def main(args: Optional[argparse.Namespace] = None) -> None:
                 model = load_model(model_def["path"], no_optim=True)
                 model.to_gpu(args.gpu_ids)
                 logger.info(f'Loaded model: {model_def["name"]}')
-            import pdb
+            # import pdb
 
-            pdb.set_trace()
+            # pdb.set_trace()
             prediction = model.predict_piecewise(signal, tta=("no_tta" not in model_def["options"]))
             #             signal = to_numpy(signal)
             #             print(signal.shape)

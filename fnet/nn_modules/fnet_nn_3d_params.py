@@ -1,7 +1,21 @@
 import torch
+from torch import nn
+
+from einops import rearrange, repeat, reduce
+from einops.layers.torch import Rearrange
+
+from functools import partial
 
 
-class Net(torch.nn.Module):
+def exists(val):
+    return val is not None
+
+
+def default(val, d):
+    return val if exists(val) else d
+
+
+class Net(nn.Module):
     def __init__(
         self,
         depth=4,
@@ -9,6 +23,7 @@ class Net(torch.nn.Module):
         dilate=1,
         in_channels=1,
         out_channels=1,
+        upsample="convt",
         activation="relu",
         norm="batch",
         groups=None,
@@ -22,24 +37,29 @@ class Net(torch.nn.Module):
         self.groups = groups
 
         if activation == "relu":
-            self.activation = torch.nn.ReLU(inplace=True)
+            self.activation = nn.ReLU(inplace=True)
         elif activation == "elu":
-            self.activation = torch.nn.ELU(inplace=True)
+            self.activation = nn.ELU(inplace=True)
         elif activation == "selu":
-            self.activation = torch.nn.SELU(inplace=True)
+            self.activation = nn.SELU(inplace=True)
         elif activation == "silu":
-            self.activation = torch.nn.SiLU(inplace=True)
+            self.activation = nn.SiLU(inplace=True)
 
         if norm == "batch":
-            self.norm = torch.nn.BatchNorm3d
+            self.norm = nn.BatchNorm3d
         elif norm == "instance":
-            self.norm = torch.nn.InstanceNorm3d
+            self.norm = nn.InstanceNorm3d
         elif norm == "layer":
-            self.norm = torch.nn.LayerNorm
+            self.norm = nn.LayerNorm
         elif norm == "group" and groups is not None:
-            self.norm = torch.nn.GroupNorm
+            self.norm = nn.GroupNorm
         else:
             raise ValueError("norm must be 'batch' or 'instance' or 'group'")
+        
+        if upsample == "pixel_shuffle":
+            self.upsample = partial(PixelShuffleUpsample, scale_factor=2, activation_fn=self.activation)
+        else:
+            self.upsample = partial(nn.ConvTranspose3d, kernel_size=2, stride=2)
 
         self.net_recurse = _Net_recurse(
             n_in_channels=self.in_channels,
@@ -47,18 +67,19 @@ class Net(torch.nn.Module):
             depth_parent=self.depth,
             depth=self.depth,
             dilate=self.dilate,
+            upsample=self.upsample,
             activation_fn=self.activation,
             norm_fn=self.norm,
             groups=self.groups,
         )
-        self.conv_out = torch.nn.Conv3d(self.mult_chan, self.out_channels, kernel_size=3, padding=1)
+        self.conv_out = nn.Conv3d(self.mult_chan, self.out_channels, kernel_size=3, padding=1)
 
     def forward(self, x):
         x_rec = self.net_recurse(x)
         return self.conv_out(x_rec)
 
 
-class _Net_recurse(torch.nn.Module):
+class _Net_recurse(nn.Module):
     def __init__(
         self,
         n_in_channels,
@@ -66,6 +87,7 @@ class _Net_recurse(torch.nn.Module):
         depth_parent=0,
         depth=0,
         dilate=1,
+        upsample=None,
         activation_fn=None,
         norm_fn=None,
         groups=None,
@@ -88,8 +110,9 @@ class _Net_recurse(torch.nn.Module):
         super().__init__()
 
         self.depth = depth
-        self.norm = norm_fn or torch.nn.BatchNorm3d
-        self.activation = activation_fn or torch.nn.ReLU(inplace=True)
+        self.norm = norm_fn or nn.BatchNorm3d
+        self.activation = activation_fn or nn.ReLU(inplace=True)
+        self.upsample = upsample or partial(nn.ConvTranspose3d, kernel_size=2, stride=2)
 
         if self.depth == depth_parent:
             n_out_channels = mult_chan
@@ -121,15 +144,17 @@ class _Net_recurse(torch.nn.Module):
             self.sub_2conv_less = SubNet2Conv(
                 2 * n_out_channels, n_out_channels, activation_fn=self.activation, norm_fn=self.norm, groups=groups
             )
-            self.conv_down = torch.nn.Conv3d(n_out_channels, n_out_channels, 2, stride=2)
+            self.conv_down = nn.Conv3d(n_out_channels, n_out_channels, 2, stride=2)
             self.relu0 = self.activation
-            self.convt = torch.nn.ConvTranspose3d(2 * n_out_channels, n_out_channels, kernel_size=2, stride=2)
+            self.convt = self.upsample(2 * n_out_channels, n_out_channels)
             self.relu1 = self.activation
             self.sub_u = _Net_recurse(
                 n_out_channels,
                 mult_chan=2,
                 depth_parent=depth_parent,
                 depth=(depth - 1),
+                upsample=self.upsample,
+                activation_fn=self.activation,
                 norm_fn=self.norm,
                 groups=groups,
             )
@@ -152,11 +177,11 @@ class _Net_recurse(torch.nn.Module):
         return x_2conv_less
 
 
-class SubNet2Conv(torch.nn.Module):
+class SubNet2Conv(nn.Module):
     def __init__(self, n_in, n_out, activation_fn=None, norm_fn=None, groups=None):
         super().__init__()
-        norm_fn = norm_fn or torch.nn.BatchNorm3d
-        activation_fn = activation_fn or torch.nn.ReLU(inplace=True)
+        norm_fn = norm_fn or nn.BatchNorm3d
+        activation_fn = activation_fn or nn.ReLU(inplace=True)
 
         if groups is not None:
             groups = 1 if n_in < groups else groups
@@ -166,9 +191,9 @@ class SubNet2Conv(torch.nn.Module):
             self.bn1 = norm_fn(n_out)
             self.bn2 = norm_fn(n_out)
 
-        self.conv1 = torch.nn.Conv3d(n_in, n_out, kernel_size=3, padding=1)
+        self.conv1 = nn.Conv3d(n_in, n_out, kernel_size=3, padding=1)
         self.relu1 = activation_fn
-        self.conv2 = torch.nn.Conv3d(n_out, n_out, kernel_size=3, padding=1)
+        self.conv2 = nn.Conv3d(n_out, n_out, kernel_size=3, padding=1)
         self.relu2 = activation_fn
 
     def forward(self, x):
@@ -181,11 +206,11 @@ class SubNet2Conv(torch.nn.Module):
         return x
 
 
-class DilatedBottleneck(torch.nn.Module):
+class DilatedBottleneck(nn.Module):
     def __init__(self, n_in, n_out, depth=4, activation_fn=None, norm_fn=None, groups=None):
         super().__init__()
-        norm_fn = norm_fn or torch.nn.BatchNorm3d
-        activation_fn = activation_fn or torch.nn.ReLU(inplace=True)
+        norm_fn = norm_fn or nn.BatchNorm3d
+        activation_fn = activation_fn or nn.ReLU(inplace=True)
 
         if groups is not None:
             groups = 1 if n_in < groups else groups
@@ -196,11 +221,11 @@ class DilatedBottleneck(torch.nn.Module):
         for i in range(depth):
             dilate = 2**i
             model = [
-                torch.nn.Conv3d(n_in, n_out, kernel_size=3, padding=dilate, dilation=dilate),
+                nn.Conv3d(n_in, n_out, kernel_size=3, padding=dilate, dilation=dilate),
                 norm_fn,
                 activation_fn,
             ]
-            self.add_module("bottleneck%d" % (i + 1), torch.nn.Sequential(*model))
+            self.add_module("bottleneck%d" % (i + 1), nn.Sequential(*model))
             if i == 0:
                 n_in = n_out
 
@@ -211,3 +236,39 @@ class DilatedBottleneck(torch.nn.Module):
             output = layer(output)
             bottleneck_output += output
         return bottleneck_output
+
+
+class PixelShuffleUpsample(nn.Module):
+    def __init__(
+        self,
+        dim,
+        dim_out = None,
+        scale_factor = 2,
+        activation_fn = None,
+    ):
+        super().__init__()
+        self.scale_squared = scale_factor ** 3
+        dim_out = default(dim_out, dim)
+        conv = nn.Conv3d(dim, dim_out * self.scale_squared, 1)
+        activation_fn = activation_fn or nn.ReLU(inplace=True)
+
+        self.net = nn.Sequential(
+            conv,
+            activation_fn,
+            Rearrange('b (c r s p) f h w -> b c (f p) (h r) (w s)', p=scale_factor, r=scale_factor, s=scale_factor)  # Updated the rearrangement for channels too
+        )
+
+        self.init_conv_(conv)
+
+    def init_conv_(self, conv):
+        o, i, *rest_dims = conv.weight.shape
+        conv_weight = torch.empty(o // self.scale_squared, i, *rest_dims)
+        nn.init.kaiming_uniform_(conv_weight)
+        conv_weight = repeat(conv_weight, 'o ... -> (o r) ...', r=self.scale_squared)
+
+        conv.weight.data.copy_(conv_weight)
+        nn.init.zeros_(conv.bias.data)
+
+    def forward(self, x):
+        x = self.net(x)
+        return x
