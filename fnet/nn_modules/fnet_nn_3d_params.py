@@ -24,6 +24,7 @@ class Net(nn.Module):
         in_channels=1,
         out_channels=1,
         upsample="convt",
+        downsample="stride2_conv",
         activation="relu",
         norm="batch",
         groups=None,
@@ -44,6 +45,8 @@ class Net(nn.Module):
             self.activation = nn.SELU(inplace=True)
         elif activation == "silu":
             self.activation = nn.SiLU(inplace=True)
+        else:
+            raise ValueError("activation must be 'relu' or 'elu' or 'selu' or 'silu'")
 
         if norm == "batch":
             self.norm = nn.BatchNorm3d
@@ -58,8 +61,17 @@ class Net(nn.Module):
         
         if upsample == "pixel_shuffle":
             self.upsample = partial(PixelShuffleUpsample, scale_factor=2, activation_fn=self.activation)
-        else:
+        elif upsample == "convt":
             self.upsample = partial(nn.ConvTranspose3d, kernel_size=2, stride=2)
+        else:
+            raise ValueError("upsample must be 'pixel_shuffle' or 'convt'")
+
+        if downsample == "pixel_unshuffle":
+            self.downsample = partial(pixel_unshuffle_downsample, scale_factor=2)
+        elif downsample == "stride2_conv":
+            self.downsample = partial(nn.Conv3d, kernel_size=2, stride=2)
+        else:
+            raise ValueError("downsample must be 'stride2_conv' or 'pixel_unshuffle'")
 
         self.net_recurse = _Net_recurse(
             n_in_channels=self.in_channels,
@@ -68,6 +80,7 @@ class Net(nn.Module):
             depth=self.depth,
             dilate=self.dilate,
             upsample=self.upsample,
+            downsample=self.downsample,
             activation_fn=self.activation,
             norm_fn=self.norm,
             groups=self.groups,
@@ -88,6 +101,7 @@ class _Net_recurse(nn.Module):
         depth=0,
         dilate=1,
         upsample=None,
+        downsample=None,
         activation_fn=None,
         norm_fn=None,
         groups=None,
@@ -113,11 +127,9 @@ class _Net_recurse(nn.Module):
         self.norm = norm_fn or nn.BatchNorm3d
         self.activation = activation_fn or nn.ReLU(inplace=True)
         self.upsample = upsample or partial(nn.ConvTranspose3d, kernel_size=2, stride=2)
+        self.downsample = downsample or partial(nn.Conv3d, kernel_size=2, stride=2)
 
-        if self.depth == depth_parent:
-            n_out_channels = mult_chan
-        else:
-            n_out_channels = n_in_channels * mult_chan
+        n_out_channels = mult_chan if self.depth == depth_parent else n_in_channels * mult_chan
 
         if depth == 0:
             self.sub_2conv_more = DilatedBottleneck(
@@ -128,15 +140,20 @@ class _Net_recurse(nn.Module):
                 norm_fn=self.norm,
                 groups=groups,
             )
-
+            
         elif depth > 0:
+            
             if groups is not None:
                 groups = 1 if n_out_channels < groups else groups
-                self.bn0 = self.norm(groups, n_out_channels)
-                self.bn1 = self.norm(groups, n_out_channels)
+                self.bn0, self.bn1 = self.norm(groups, n_out_channels), self.norm(groups, n_out_channels)
             else:
-                self.bn0 = self.norm(n_out_channels)
-                self.bn1 = self.norm(n_out_channels)
+                self.bn0, self.bn1 = self.norm(n_out_channels), self.norm(n_out_channels)
+
+            self.relu0 = self.activation
+            self.relu1 = self.activation
+
+            self.conv_down = self.downsample(n_out_channels, n_out_channels)            
+            self.convt = self.upsample(2 * n_out_channels, n_out_channels)
 
             self.sub_2conv_more = SubNet2Conv(
                 n_in_channels, n_out_channels, activation_fn=self.activation, norm_fn=self.norm, groups=groups
@@ -144,16 +161,14 @@ class _Net_recurse(nn.Module):
             self.sub_2conv_less = SubNet2Conv(
                 2 * n_out_channels, n_out_channels, activation_fn=self.activation, norm_fn=self.norm, groups=groups
             )
-            self.conv_down = nn.Conv3d(n_out_channels, n_out_channels, 2, stride=2)
-            self.relu0 = self.activation
-            self.convt = self.upsample(2 * n_out_channels, n_out_channels)
-            self.relu1 = self.activation
+            
             self.sub_u = _Net_recurse(
                 n_out_channels,
                 mult_chan=2,
                 depth_parent=depth_parent,
                 depth=(depth - 1),
                 upsample=self.upsample,
+                downsample=self.downsample,
                 activation_fn=self.activation,
                 norm_fn=self.norm,
                 groups=groups,
@@ -225,7 +240,7 @@ class DilatedBottleneck(nn.Module):
                 norm_fn,
                 activation_fn,
             ]
-            self.add_module("bottleneck%d" % (i + 1), nn.Sequential(*model))
+            self.add_module(f"bottleneck{i + 1}", nn.Sequential(*model))
             if i == 0:
                 n_in = n_out
 
@@ -255,7 +270,7 @@ class PixelShuffleUpsample(nn.Module):
         self.net = nn.Sequential(
             conv,
             activation_fn,
-            Rearrange('b (c r s p) f h w -> b c (f p) (h r) (w s)', p=scale_factor, r=scale_factor, s=scale_factor)  # Updated the rearrangement for channels too
+            Rearrange('b (c r s p) f h w -> b c (f p) (h r) (w s)', p=scale_factor, r=scale_factor, s=scale_factor)
         )
 
         self.init_conv_(conv)
@@ -272,3 +287,10 @@ class PixelShuffleUpsample(nn.Module):
     def forward(self, x):
         x = self.net(x)
         return x
+
+
+def pixel_unshuffle_downsample(dim, dim_out, scale_factor = 2):
+    return nn.Sequential(
+        Rearrange('b c (f s1) (h s2) (w s3) -> b (c s1 s2 s3) f h w', s1 = scale_factor, s2 = scale_factor, s3 = scale_factor),
+        nn.Conv3d(dim * scale_factor ** 3, dim_out, 1)
+    )
