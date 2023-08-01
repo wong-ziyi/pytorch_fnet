@@ -28,6 +28,7 @@ class Net(nn.Module):
         activation="relu",
         norm="batch",
         groups=None,
+        res_block=False,
     ):
         super().__init__()
         self.depth = depth
@@ -36,6 +37,7 @@ class Net(nn.Module):
         self.in_channels = in_channels
         self.out_channels = out_channels
         self.groups = groups
+        self.res_block = res_block
 
         if activation == "relu":
             self.activation = nn.ReLU(inplace=True)
@@ -45,8 +47,10 @@ class Net(nn.Module):
             self.activation = nn.SELU(inplace=True)
         elif activation == "silu":
             self.activation = nn.SiLU(inplace=True)
+        elif activation == "gelu":
+            self.activation = nn.GELU()
         else:
-            raise ValueError("activation must be 'relu' or 'elu' or 'selu' or 'silu'")
+            raise ValueError("activation must be one of: 'relu', 'elu', 'selu', 'silu', 'gelu'")
 
         if norm == "batch":
             self.norm = nn.BatchNorm3d
@@ -73,6 +77,7 @@ class Net(nn.Module):
         else:
             raise ValueError("downsample must be 'stride2_conv' or 'pixel_unshuffle'")
 
+
         self.net_recurse = _Net_recurse(
             n_in_channels=self.in_channels,
             mult_chan=self.mult_chan,
@@ -84,6 +89,7 @@ class Net(nn.Module):
             activation_fn=self.activation,
             norm_fn=self.norm,
             groups=self.groups,
+            res_block=self.res_block,
         )
         self.conv_out = nn.Conv3d(self.mult_chan, self.out_channels, kernel_size=3, padding=1)
 
@@ -105,6 +111,7 @@ class _Net_recurse(nn.Module):
         activation_fn=None,
         norm_fn=None,
         groups=None,
+        res_block=False,
     ):
         """Class for recursive definition of U-network.
 
@@ -156,10 +163,10 @@ class _Net_recurse(nn.Module):
             self.convt = self.upsample(2 * n_out_channels, n_out_channels)
 
             self.sub_2conv_more = SubNet2Conv(
-                n_in_channels, n_out_channels, activation_fn=self.activation, norm_fn=self.norm, groups=groups
+                n_in_channels, n_out_channels, activation_fn=self.activation, norm_fn=self.norm, groups=groups, res_block=res_block
             )
             self.sub_2conv_less = SubNet2Conv(
-                2 * n_out_channels, n_out_channels, activation_fn=self.activation, norm_fn=self.norm, groups=groups
+                2 * n_out_channels, n_out_channels, activation_fn=self.activation, norm_fn=self.norm, groups=groups, res_block=res_block
             )
             
             self.sub_u = _Net_recurse(
@@ -193,8 +200,9 @@ class _Net_recurse(nn.Module):
 
 
 class SubNet2Conv(nn.Module):
-    def __init__(self, n_in, n_out, activation_fn=None, norm_fn=None, groups=None):
+    def __init__(self, n_in, n_out, activation_fn=None, norm_fn=None, groups=None, res_block=False):
         super().__init__()
+        self.res_block = res_block
         norm_fn = norm_fn or nn.BatchNorm3d
         activation_fn = activation_fn or nn.ReLU(inplace=True)
 
@@ -211,14 +219,44 @@ class SubNet2Conv(nn.Module):
         self.conv2 = nn.Conv3d(n_out, n_out, kernel_size=3, padding=1)
         self.relu2 = activation_fn
 
+        if res_block:
+            self.res_conv = nn.Conv3d(n_in, n_out, 1) if n_in != n_out else nn.Identity()
+            if res_block == "regress":
+                self.beta = nn.Parameter(torch.zeros((1, n_out, 1, 1, 1)), requires_grad=True)
+                self.gamma = nn.Parameter(torch.zeros((1, n_out, 1, 1, 1)), requires_grad=True)
+
     def forward(self, x):
-        x = self.conv1(x)
-        x = self.bn1(x)
-        x = self.relu1(x)
-        x = self.conv2(x)
-        x = self.bn2(x)
-        x = self.relu2(x)
-        return x
+        h = self.conv1(x)
+        h = self.bn1(h)
+        h = self.relu1(h)
+
+        # learned skip connection over first convolution
+        if self.res_block == "regress":
+            y = self.res_conv(x) + h * self.beta
+        # skip connection over first convolution
+        elif self.res_block == "x2":
+            y = self.res_conv(x) + h
+        # covers both no skip connection and classic skip connection
+        else:
+            y = h
+
+        h = self.conv2(y)
+        h = self.bn2(h)
+        h = self.relu2(h)
+
+        if not self.res_block:
+            y = h
+        # learned skip connection over second convolution
+        elif self.res_block == "regress":
+            y = y + h * self.gamma
+        # skip connection over second convolution
+        elif self.res_block == "x2":
+            y = y + h
+        # classic skip connection over both convolutions
+        else:
+            y = self.res_conv(x) + h
+
+        return y
 
 
 class DilatedBottleneck(nn.Module):
