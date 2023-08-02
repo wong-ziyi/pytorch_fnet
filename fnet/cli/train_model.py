@@ -25,6 +25,7 @@ from fnet.utils.general_utils import str_to_object
 import fnet
 import fnet.utils.viz_utils as vu
 
+from ptflops import get_model_complexity_info
 
 logger = logging.getLogger(__name__)
 
@@ -111,6 +112,12 @@ def main(args: Optional[argparse.Namespace] = None):
     log_training_options(vars(args))
     path_model = os.path.join(args.path_save_dir, "model.p")
     model = fnet.models.load_or_init_model(path_model, args.path_json)
+
+    inp_shape = tuple([1] + train_options["bpds_kwargs"]["patch_shape"])
+    macs, params = get_model_complexity_info(model.net, inp_shape, verbose=False, print_per_layer_stat=False)
+    macs, params = float(macs[:-4]), float(params[:-3])
+    logger.info(f"Model complexity: {macs} MACs, {params} params")
+
     init_cuda(args.gpu_ids[0])
     model.to_gpu(args.gpu_ids)
     logger.info(model)
