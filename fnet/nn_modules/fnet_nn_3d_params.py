@@ -29,6 +29,8 @@ class Net(nn.Module):
         norm="batch",
         groups=None,
         res_block=False,
+        init_embed=None,
+        init_kernel_size=3,
     ):
         super().__init__()
         self.depth = depth
@@ -62,7 +64,7 @@ class Net(nn.Module):
             self.norm = nn.GroupNorm
         else:
             raise ValueError("norm must be 'batch' or 'instance' or 'group'")
-        
+
         if upsample == "pixel_shuffle":
             self.upsample = partial(PixelShuffleUpsample, scale_factor=2, activation_fn=self.activation)
         elif upsample == "convt":
@@ -77,9 +79,22 @@ class Net(nn.Module):
         else:
             raise ValueError("downsample must be 'stride2_conv' or 'pixel_unshuffle'")
 
+        n_in_subnet = self.in_channels
+        if init_embed == "conv":
+            n_in_subnet = self.mult_chan
+            self.init_embed = nn.Conv3d(
+                self.in_channels, self.mult_chan, kernel_size=init_kernel_size, padding=init_kernel_size // 2
+            )
+        elif init_embed == "cross_embed":
+            n_in_subnet = self.mult_chan
+            self.init_embed = CrossEmbedLayer3D(
+                self.in_channels, dim_out=self.mult_chan, kernel_sizes=init_kernel_size, stride=1
+            )
+        elif init_embed is not None:
+            raise ValueError("init_embed must be 'conv' or 'cross_embed'")
 
         self.net_recurse = _Net_recurse(
-            n_in_channels=self.in_channels,
+            n_in_channels=n_in_subnet,
             mult_chan=self.mult_chan,
             depth_parent=self.depth,
             depth=self.depth,
@@ -94,6 +109,8 @@ class Net(nn.Module):
         self.conv_out = nn.Conv3d(self.mult_chan, self.out_channels, kernel_size=3, padding=1)
 
     def forward(self, x):
+        if hasattr(self, "init_embed"):
+            x = self.init_embed(x)
         x_rec = self.net_recurse(x)
         return self.conv_out(x_rec)
 
@@ -147,9 +164,9 @@ class _Net_recurse(nn.Module):
                 norm_fn=self.norm,
                 groups=groups,
             )
-            
+
         elif depth > 0:
-            
+
             if groups is not None:
                 groups = 1 if n_out_channels < groups else groups
                 self.bn0, self.bn1 = self.norm(groups, n_out_channels), self.norm(groups, n_out_channels)
@@ -159,16 +176,26 @@ class _Net_recurse(nn.Module):
             self.relu0 = self.activation
             self.relu1 = self.activation
 
-            self.conv_down = self.downsample(n_out_channels, n_out_channels)            
+            self.conv_down = self.downsample(n_out_channels, n_out_channels)
             self.convt = self.upsample(2 * n_out_channels, n_out_channels)
 
             self.sub_2conv_more = SubNet2Conv(
-                n_in_channels, n_out_channels, activation_fn=self.activation, norm_fn=self.norm, groups=groups, res_block=res_block
+                n_in_channels,
+                n_out_channels,
+                activation_fn=self.activation,
+                norm_fn=self.norm,
+                groups=groups,
+                res_block=res_block,
             )
             self.sub_2conv_less = SubNet2Conv(
-                2 * n_out_channels, n_out_channels, activation_fn=self.activation, norm_fn=self.norm, groups=groups, res_block=res_block
+                2 * n_out_channels,
+                n_out_channels,
+                activation_fn=self.activation,
+                norm_fn=self.norm,
+                groups=groups,
+                res_block=res_block,
             )
-            
+
             self.sub_u = _Net_recurse(
                 n_out_channels,
                 mult_chan=2,
@@ -295,12 +322,12 @@ class PixelShuffleUpsample(nn.Module):
     def __init__(
         self,
         dim,
-        dim_out = None,
-        scale_factor = 2,
-        activation_fn = None,
+        dim_out=None,
+        scale_factor=2,
+        activation_fn=None,
     ):
         super().__init__()
-        self.scale_squared = scale_factor ** 3
+        self.scale_squared = scale_factor**3
         dim_out = default(dim_out, dim)
         conv = nn.Conv3d(dim, dim_out * self.scale_squared, 1)
         activation_fn = activation_fn or nn.ReLU(inplace=True)
@@ -308,7 +335,7 @@ class PixelShuffleUpsample(nn.Module):
         self.net = nn.Sequential(
             conv,
             activation_fn,
-            Rearrange('b (c r s p) f h w -> b c (f p) (h r) (w s)', p=scale_factor, r=scale_factor, s=scale_factor)
+            Rearrange("b (c r s p) f h w -> b c (f p) (h r) (w s)", p=scale_factor, r=scale_factor, s=scale_factor),
         )
 
         self.init_conv_(conv)
@@ -317,7 +344,7 @@ class PixelShuffleUpsample(nn.Module):
         o, i, *rest_dims = conv.weight.shape
         conv_weight = torch.empty(o // self.scale_squared, i, *rest_dims)
         nn.init.kaiming_uniform_(conv_weight)
-        conv_weight = repeat(conv_weight, 'o ... -> (o r) ...', r=self.scale_squared)
+        conv_weight = repeat(conv_weight, "o ... -> (o r) ...", r=self.scale_squared)
 
         conv.weight.data.copy_(conv_weight)
         nn.init.zeros_(conv.bias.data)
@@ -327,8 +354,32 @@ class PixelShuffleUpsample(nn.Module):
         return x
 
 
-def pixel_unshuffle_downsample(dim, dim_out, scale_factor = 2):
+def pixel_unshuffle_downsample(dim, dim_out, scale_factor=2):
     return nn.Sequential(
-        Rearrange('b c (f s1) (h s2) (w s3) -> b (c s1 s2 s3) f h w', s1 = scale_factor, s2 = scale_factor, s3 = scale_factor),
-        nn.Conv3d(dim * scale_factor ** 3, dim_out, 1)
+        Rearrange(
+            "b c (f s1) (h s2) (w s3) -> b (c s1 s2 s3) f h w", s1=scale_factor, s2=scale_factor, s3=scale_factor
+        ),
+        nn.Conv3d(dim * scale_factor**3, dim_out, 1),
     )
+
+
+class CrossEmbedLayer3D(nn.Module):
+    def __init__(self, dim_in, kernel_sizes, dim_out=None, stride=2):
+        super().__init__()
+        assert all([*map(lambda t: (t % 2) == (stride % 2), kernel_sizes)])
+        dim_out = default(dim_out, dim_in)
+
+        kernel_sizes = sorted(kernel_sizes)
+        num_scales = len(kernel_sizes)
+
+        # calculate the dimension at each scale
+        dim_scales = [int(dim_out / (2**i)) for i in range(1, num_scales)]
+        dim_scales = [*dim_scales, dim_out - sum(dim_scales)]
+
+        self.convs = nn.ModuleList([])
+        for kernel, dim_scale in zip(kernel_sizes, dim_scales):
+            self.convs.append(nn.Conv3d(dim_in, dim_scale, kernel, stride=stride, padding=(kernel - stride) // 2))
+
+    def forward(self, x):
+        fmaps = tuple(map(lambda conv: conv(x), self.convs))
+        return torch.cat(fmaps, dim=1)
