@@ -2,7 +2,8 @@ from typing import Optional, Tuple
 import logging
 
 import numpy as np
-import scipy
+from scipy.ndimage import zoom
+from scipy.stats import median_abs_deviation
 
 from skimage import img_as_float32
 from morphocell.preprocessing import get_threshold_otsu
@@ -232,11 +233,11 @@ class Resizer(object):
 
     def __call__(self, x):
         if self.per_dim is None:
-            return scipy.ndimage.zoom(x, (self.factors), mode="nearest")
+            return zoom(x, (self.factors), mode="nearest")
         ars_resized = list()
         for idx in range(x.shape[self.per_dim]):
             slices = tuple([idx if i == self.per_dim else slice(None) for i in range(x.ndim)])
-            ars_resized.append(scipy.ndimage.zoom(x[slices], self.factors, mode="nearest"))
+            ars_resized.append(zoom(x[slices], self.factors, mode="nearest"))
         return np.stack(ars_resized, axis=self.per_dim)
 
     def __repr__(self):
@@ -403,6 +404,8 @@ def norm_range(
 
 def norm_threshold(
     ar: np.ndarray,
+    threshold: Optional[float] = None,
+    scale: str = "std",
 ):
     """
     Normalizes array by thresholding and standard deviation.
@@ -411,6 +414,10 @@ def norm_threshold(
     ----------
     ar
         Input 3d array to be normalized.
+    threshold
+        Threshold value for normalization.
+    scale
+        Scale factor for normalization.
 
     Returns
     -------
@@ -418,21 +425,31 @@ def norm_threshold(
          Nomralized array, dtype = float32
     """
     ar = np.squeeze(ar)
+    ar = img_as_float32(ar) if not np.issubdtype(ar.dtype, np.floating) else ar
 
     if ar.ndim != 3:
         raise ValueError("Input array must be 3d")
     if ar.shape[0] < 32:
         raise ValueError("Input array must be at least length 32 in first dimension")
 
-    thresh = get_threshold_otsu(downscale_and_filter(ar, downscale_factor=1, filter_size=5))
-    ar = img_as_float32(ar) if not np.issubdtype(ar.dtype, np.floating) else ar
-    ar = (ar - thresh) / ar.std()
-    return ar.astype(np.float32)
+    if threshold is None:
+        threshold = get_threshold_otsu(downscale_and_filter(ar, downscale_factor=1, filter_size=5))
+
+    if scale == "std":
+        scale = ar.std()
+    elif scale == "mad":
+        scale = median_abs_deviation(ar, axis=None, scale="normal")
+    else:
+        raise Exception("scale has to be either std or mad")
+
+    ar = (ar - threshold) / scale
+    return ar.astype(np.float32, copy=False)
 
 
 def norm_foreground(
     ar: np.ndarray,
     center: str = "thresh",
+    scale: str = "std",
 ):
     """
     Normalizes array by foreground min/mean and std.
@@ -441,6 +458,10 @@ def norm_foreground(
     ----------
     ar
         Input 3d array to be normalized.
+    center
+        Method to center the foreground. Either "thresh" or "mean".
+    scale
+        Method to scale the foreground. Either "std" or "mad".
 
     Returns
     -------
@@ -456,12 +477,19 @@ def norm_foreground(
 
     ar = img_as_float32(ar) if not np.issubdtype(ar.dtype, np.floating) else ar
     thresh = get_threshold_otsu(downscale_and_filter(ar, downscale_factor=1, filter_size=5))
-    foreground = ar[ar>thresh]
-    
+    foreground = ar[ar > thresh]
+
+    if scale == "std":
+        scale = foreground.std()
+    elif scale == "mad":
+        scale = median_abs_deviation(foreground, axis=None, scale="normal")
+    else:
+        raise Exception("scale has to be either std or mad")
+
     if center == "thresh":
-        ar = (ar - thresh) / foreground.std()
+        ar = (ar - thresh) / scale
     elif center == "mean":
-        ar = (ar - foreground.mean()) / foreground.std()
+        ar = (ar - foreground.mean()) / scale
     else:
         raise Exception("center has to be either mean or thresh")
 
