@@ -148,6 +148,8 @@ class _Net_recurse(nn.Module):
         super().__init__()
 
         self.depth = depth
+        self.dilate = dilate
+        self.res_block = res_block
         self.norm = norm_fn or nn.BatchNorm3d
         self.activation = activation_fn or nn.ReLU(inplace=True)
         self.upsample = upsample or partial(nn.ConvTranspose3d, kernel_size=2, stride=2)
@@ -159,7 +161,7 @@ class _Net_recurse(nn.Module):
             self.sub_2conv_more = DilatedBottleneck(
                 n_in_channels,
                 n_out_channels,
-                depth=dilate,
+                depth=self.dilate,
                 activation_fn=self.activation,
                 norm_fn=self.norm,
                 groups=groups,
@@ -201,11 +203,13 @@ class _Net_recurse(nn.Module):
                 mult_chan=2,
                 depth_parent=depth_parent,
                 depth=(depth - 1),
+                dilate=self.dilate,
                 upsample=self.upsample,
                 downsample=self.downsample,
                 activation_fn=self.activation,
                 norm_fn=self.norm,
                 groups=groups,
+                res_block=self.res_block,
             )
 
     def forward(self, x):
