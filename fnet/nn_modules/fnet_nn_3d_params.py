@@ -15,6 +15,13 @@ def default(val, d):
     return val if exists(val) else d
 
 
+def act_inplace(act):
+    if act == nn.GELU or act == nn.Identity:
+        return act()
+    else:
+        return act(inplace=True)
+
+
 class Net(nn.Module):
     def __init__(
         self,
@@ -25,12 +32,15 @@ class Net(nn.Module):
         out_channels=1,
         upsample="convt",
         downsample="stride2_conv",
+        double_down=False,
         activation="relu",
         norm="batch",
         groups=None,
+        block=None,
         res_block=False,
         init_embed=None,
         init_kernel_size=3,
+        block_kwargs=None,
     ):
         super().__init__()
         self.depth = depth
@@ -38,19 +48,22 @@ class Net(nn.Module):
         self.dilate = dilate
         self.in_channels = in_channels
         self.out_channels = out_channels
+        self.double_down = double_down
         self.groups = groups
         self.res_block = res_block
 
         if activation == "relu":
-            self.activation = nn.ReLU(inplace=True)
+            self.activation = nn.ReLU
         elif activation == "elu":
-            self.activation = nn.ELU(inplace=True)
+            self.activation = nn.ELU
         elif activation == "selu":
-            self.activation = nn.SELU(inplace=True)
+            self.activation = nn.SELU
         elif activation == "silu":
-            self.activation = nn.SiLU(inplace=True)
+            self.activation = nn.SiLU
         elif activation == "gelu":
-            self.activation = nn.GELU()
+            self.activation = nn.GELU
+        elif activation == "null":
+            self.activation = None
         else:
             raise ValueError("activation must be one of: 'relu', 'elu', 'selu', 'silu', 'gelu'")
 
@@ -62,11 +75,22 @@ class Net(nn.Module):
             self.norm = nn.LayerNorm
         elif norm == "group" and groups is not None:
             self.norm = nn.GroupNorm
+        elif norm == "null":
+            self.norm = None
         else:
             raise ValueError("norm must be 'batch' or 'instance' or 'group'")
 
+        if block == "plain":
+            self.block = partial(PlainBaselineBlock, **default(block_kwargs, {}))
+            self.mid_block = partial(PlainBaselineBlock, **default(block_kwargs, {}))
+        else:
+            self.block = partial(SubNet2Conv, activation_fn=self.activation, norm_fn=self.norm, res_block=self.res_block)
+            self.mid_block = partial(DilatedBottleneck, activation_fn=self.activation, norm_fn=self.norm, depth=self.dilate)
+
         if upsample == "pixel_shuffle":
             self.upsample = partial(PixelShuffleUpsample, scale_factor=2, activation_fn=self.activation)
+        elif upsample == "pixel_shuffle_noact":
+            self.upsample = partial(PixelShuffleUpsample, scale_factor=2)
         elif upsample == "convt":
             self.upsample = partial(nn.ConvTranspose3d, kernel_size=2, stride=2)
         else:
@@ -82,6 +106,7 @@ class Net(nn.Module):
         n_in_subnet = self.in_channels
         if init_embed == "conv":
             n_in_subnet = self.mult_chan
+            init_kernel_size = init_kernel_size or 3
             self.init_embed = nn.Conv3d(
                 self.in_channels, self.mult_chan, kernel_size=init_kernel_size, padding=init_kernel_size // 2
             )
@@ -98,13 +123,14 @@ class Net(nn.Module):
             mult_chan=self.mult_chan,
             depth_parent=self.depth,
             depth=self.depth,
-            dilate=self.dilate,
             upsample=self.upsample,
             downsample=self.downsample,
+            double_down=self.double_down,
             activation_fn=self.activation,
             norm_fn=self.norm,
             groups=self.groups,
-            res_block=self.res_block,
+            block=self.block,
+            mid_block=self.mid_block,
         )
         self.conv_out = nn.Conv3d(self.mult_chan, self.out_channels, kernel_size=3, padding=1)
 
@@ -122,13 +148,14 @@ class _Net_recurse(nn.Module):
         mult_chan=2,
         depth_parent=0,
         depth=0,
-        dilate=1,
         upsample=None,
         downsample=None,
+        double_down=False,
         activation_fn=None,
         norm_fn=None,
         groups=None,
-        res_block=False,
+        block=None,
+        mid_block=None,
     ):
         """Class for recursive definition of U-network.
 
@@ -146,22 +173,21 @@ class _Net_recurse(nn.Module):
 
         """
         super().__init__()
-
         self.depth = depth
-        self.norm = norm_fn or nn.BatchNorm3d
-        self.activation = activation_fn or nn.ReLU(inplace=True)
-        self.upsample = upsample or partial(nn.ConvTranspose3d, kernel_size=2, stride=2)
+        self.block = block
+        self.mid_block = mid_block
+        self.norm = norm_fn or nn.Identity
+        self.activation = activation_fn or nn.Identity
+        self.double_down = double_down
         self.downsample = downsample or partial(nn.Conv3d, kernel_size=2, stride=2)
+        self.upsample = upsample or partial(nn.ConvTranspose3d, kernel_size=2, stride=2)
 
         n_out_channels = mult_chan if self.depth == depth_parent else n_in_channels * mult_chan
 
         if depth == 0:
-            self.sub_2conv_more = DilatedBottleneck(
+            self.sub_2conv_more = self.mid_block(
                 n_in_channels,
                 n_out_channels,
-                depth=dilate,
-                activation_fn=self.activation,
-                norm_fn=self.norm,
                 groups=groups,
             )
 
@@ -173,46 +199,47 @@ class _Net_recurse(nn.Module):
             else:
                 self.bn0, self.bn1 = self.norm(n_out_channels), self.norm(n_out_channels)
 
-            self.relu0 = self.activation
-            self.relu1 = self.activation
+            self.relu0 = act_inplace(self.activation)
+            self.relu1 = act_inplace(self.activation)
 
-            self.conv_down = self.downsample(n_out_channels, n_out_channels)
-            self.convt = self.upsample(2 * n_out_channels, n_out_channels)
+            if self.double_down:
+                self.conv_down = self.downsample(n_in_channels, n_out_channels)
+            else:
+                self.conv_down = self.downsample(n_out_channels, n_out_channels)
 
-            self.sub_2conv_more = SubNet2Conv(
+            self.sub_2conv_more = self.block(
                 n_in_channels,
                 n_out_channels,
-                activation_fn=self.activation,
-                norm_fn=self.norm,
                 groups=groups,
-                res_block=res_block,
             )
-            self.sub_2conv_less = SubNet2Conv(
+            self.sub_2conv_less = self.block(
                 2 * n_out_channels,
                 n_out_channels,
-                activation_fn=self.activation,
-                norm_fn=self.norm,
                 groups=groups,
-                res_block=res_block,
             )
+            self.convt = self.upsample(2 * n_out_channels, n_out_channels)
 
+            recurse_n_in = 2 * n_out_channels if self.double_down else n_out_channels
             self.sub_u = _Net_recurse(
-                n_out_channels,
+                recurse_n_in,
                 mult_chan=2,
                 depth_parent=depth_parent,
                 depth=(depth - 1),
                 upsample=self.upsample,
                 downsample=self.downsample,
+                double_down=self.double_down,
                 activation_fn=self.activation,
                 norm_fn=self.norm,
                 groups=groups,
+                block=self.block,
+                mid_block=self.mid_block,
             )
 
     def forward(self, x):
+        import pdb; pdb.set_trace()
         if self.depth == 0:
             return self.sub_2conv_more(x)
         else:  # depth > 0
-            # number of slices must match that in training data or 32??
             x_2conv_more = self.sub_2conv_more(x)
             x_conv_down = self.conv_down(x_2conv_more)
             x_bn0 = self.bn0(x_conv_down)
@@ -230,8 +257,6 @@ class SubNet2Conv(nn.Module):
     def __init__(self, n_in, n_out, activation_fn=None, norm_fn=None, groups=None, res_block=False):
         super().__init__()
         self.res_block = res_block
-        norm_fn = norm_fn or nn.BatchNorm3d
-        activation_fn = activation_fn or nn.ReLU(inplace=True)
 
         if groups is not None:
             groups = 1 if n_in < groups else groups
@@ -242,9 +267,9 @@ class SubNet2Conv(nn.Module):
             self.bn2 = norm_fn(n_out)
 
         self.conv1 = nn.Conv3d(n_in, n_out, kernel_size=3, padding=1)
-        self.relu1 = activation_fn
+        self.relu1 = act_inplace(activation_fn)
         self.conv2 = nn.Conv3d(n_out, n_out, kernel_size=3, padding=1)
-        self.relu2 = activation_fn
+        self.relu2 = act_inplace(activation_fn)
 
         if res_block:
             self.res_conv = nn.Conv3d(n_in, n_out, 1) if n_in != n_out else nn.Identity()
@@ -289,21 +314,19 @@ class SubNet2Conv(nn.Module):
 class DilatedBottleneck(nn.Module):
     def __init__(self, n_in, n_out, depth=4, activation_fn=None, norm_fn=None, groups=None):
         super().__init__()
-        norm_fn = norm_fn or nn.BatchNorm3d
-        activation_fn = activation_fn or nn.ReLU(inplace=True)
 
         if groups is not None:
             groups = 1 if n_in < groups else groups
-            norm_fn = norm_fn(groups, n_out)
+            norm = norm_fn(groups, n_out)
         else:
-            norm_fn = norm_fn(n_out)
+            norm = norm_fn(n_out)
 
         for i in range(depth):
             dilate = 2**i
             model = [
                 nn.Conv3d(n_in, n_out, kernel_size=3, padding=dilate, dilation=dilate),
-                norm_fn,
-                activation_fn,
+                norm,
+                act_inplace(activation),
             ]
             self.add_module(f"bottleneck{i + 1}", nn.Sequential(*model))
             if i == 0:
@@ -330,11 +353,11 @@ class PixelShuffleUpsample(nn.Module):
         self.scale_squared = scale_factor**3
         dim_out = default(dim_out, dim)
         conv = nn.Conv3d(dim, dim_out * self.scale_squared, 1)
-        activation_fn = activation_fn or nn.ReLU(inplace=True)
+        activation_fn = activation_fn or nn.Identity
 
         self.net = nn.Sequential(
             conv,
-            activation_fn,
+            activation_fn(),
             Rearrange("b (c r s p) f h w -> b c (f p) (h r) (w s)", p=scale_factor, r=scale_factor, s=scale_factor),
         )
 
@@ -383,3 +406,64 @@ class CrossEmbedLayer3D(nn.Module):
     def forward(self, x):
         fmaps = tuple(map(lambda conv: conv(x), self.convs))
         return torch.cat(fmaps, dim=1)
+    
+
+class PlainBaselineBlock(nn.Module):
+    def __init__(self, n_in, n_out, dw_expand=1, ffn_expand=2, chan_attn=None, activation_fn=None, norm_fn=None, groups=None):
+        super().__init__()
+        norm_fn = norm_fn or nn.Identity
+        chan_attn = chan_attn or nn.Identity
+        activation_fn = activation_fn or nn.ReLU
+
+        if groups is not None:
+            groups = 1 if n_in < groups else groups
+            self.norm1 = norm_fn(groups, n_out)
+            self.norm2 = norm_fn(groups, n_out)
+        else:
+            self.norm1 = norm_fn(n_out)
+            self.norm2 = norm_fn(n_out)
+
+        n_dw = n_in * dw_expand
+        self.conv1 = nn.Conv3d(n_in, n_dw, kernel_size=1, padding=0, stride=1, groups=1, bias=True)
+        self.conv2 = nn.Conv3d(in_channels=n_dw, out_channels=n_dw, kernel_size=3, padding=1, stride=1, groups=n_dw, bias=True)
+        self.conv3 = nn.Conv3d(in_channels=n_dw, out_channels=n_in, kernel_size=1, padding=0, stride=1, groups=1, bias=True)
+
+        self.activ1 = act_inplace(activation_fn)
+        self.activ2 = act_inplace(activation_fn)
+
+        if chan_attn == "ca":
+            self.ca = nn.Sequential(
+                nn.AdaptiveAvgPool3d(1),
+                nn.Conv3d(in_channels=n_dw, out_channels=n_dw // 2, kernel_size=1, padding=0, stride=1, groups=1, bias=True),
+                nn.ReLU(inplace=True),
+                nn.Conv3d(in_channels=n_dw // 2, out_channels=n_dw, kernel_size=1, padding=0, stride=1, groups=1, bias=True),
+                nn.Sigmoid()
+            )
+        else:
+            self.ca = nn.Identity()
+        
+        n_ffn = n_in * ffn_expand
+        self.conv4 = nn.Conv3d(in_channels=n_in, out_channels=n_ffn, kernel_size=1, padding=0, stride=1, groups=1, bias=True)
+        self.conv5 = nn.Conv3d(in_channels=n_ffn, out_channels=n_in, kernel_size=1, padding=0, stride=1, groups=1, bias=True)
+
+        self.beta = nn.Parameter(torch.zeros((1, n_in, 1, 1, 1)), requires_grad=True)
+        self.gamma = nn.Parameter(torch.zeros((1, n_in, 1, 1, 1)), requires_grad=True)
+
+
+    def forward(self, x):
+
+        h = self.norm1(x)
+        h = self.conv1(h)
+        h = self.conv2(h)
+        h = self.activ1(h)
+        h = h * self.ca(h)
+        h = self.conv3(h)
+
+        y = x + h * self.beta
+
+        h = self.norm2(y)
+        h = self.conv4(h)
+        h = self.activ2(h)
+        h = self.conv5(h)
+ 
+        return y + h * self.gamma
