@@ -22,6 +22,24 @@ def act_inplace(act):
         return act(inplace=True)
 
 
+def get_act(act_str):
+    if act_str == "relu":
+        return nn.ReLU
+    elif act_str == "elu":
+        return nn.ELU
+    elif act_str == "selu":
+        return nn.SELU
+    elif act_str == "silu":
+        return nn.SiLU
+    elif act_str == "gelu":
+        return nn.GELU
+    elif act_str == "null":
+        return None
+    else:
+        raise ValueError("activation must be one of: 'relu', 'elu', 'selu', 'silu', 'gelu'")
+
+
+
 class Net(nn.Module):
     def __init__(
         self,
@@ -52,21 +70,6 @@ class Net(nn.Module):
         self.groups = groups
         self.res_block = res_block
 
-        if activation == "relu":
-            self.activation = nn.ReLU
-        elif activation == "elu":
-            self.activation = nn.ELU
-        elif activation == "selu":
-            self.activation = nn.SELU
-        elif activation == "silu":
-            self.activation = nn.SiLU
-        elif activation == "gelu":
-            self.activation = nn.GELU
-        elif activation == "null":
-            self.activation = None
-        else:
-            raise ValueError("activation must be one of: 'relu', 'elu', 'selu', 'silu', 'gelu'")
-
         if norm == "batch":
             self.norm = nn.BatchNorm3d
         elif norm == "instance":
@@ -80,10 +83,14 @@ class Net(nn.Module):
         else:
             raise ValueError("norm must be 'batch' or 'instance' or 'group'")
 
+        self.activation = get_act(activation)
+
         if block == "plain":
+            subnet_mult_chan = 2
             self.block = partial(PlainBaselineBlock, **default(block_kwargs, {}))
             self.mid_block = partial(PlainBaselineBlock, **default(block_kwargs, {}))
         else:
+            subnet_mult_chan = self.mult_chan
             self.block = partial(SubNet2Conv, activation_fn=self.activation, norm_fn=self.norm, res_block=self.res_block)
             self.mid_block = partial(DilatedBottleneck, activation_fn=self.activation, norm_fn=self.norm, depth=self.dilate)
 
@@ -182,12 +189,18 @@ class _Net_recurse(nn.Module):
         self.downsample = downsample or partial(nn.Conv3d, kernel_size=2, stride=2)
         self.upsample = upsample or partial(nn.ConvTranspose3d, kernel_size=2, stride=2)
 
-        n_out_channels = mult_chan if self.depth == depth_parent else n_in_channels * mult_chan
+        if self.depth != depth_parent:
+            n_out_channels = n_in_channels * mult_chan
+        else: 
+            # only first level
+            n_out_channels = mult_chan
 
         if depth == 0:
+            n_in_conv = n_in_channels
+            n_out_conv = n_out_channels if not self.double_down else n_in_channels
             self.sub_2conv_more = self.mid_block(
-                n_in_channels,
-                n_out_channels,
+                n_in_conv,
+                n_out_conv,
                 groups=groups,
             )
 
@@ -202,24 +215,41 @@ class _Net_recurse(nn.Module):
             self.relu0 = act_inplace(self.activation)
             self.relu1 = act_inplace(self.activation)
 
+            n_in_conv_enc = n_in_channels
+            n_out_conv_enc = n_out_channels if not self.double_down else n_in_channels
+
+            n_in_down = n_out_channels if not self.double_down else n_in_channels
             if self.double_down:
-                self.conv_down = self.downsample(n_in_channels, n_out_channels)
+                n_out_down = n_out_channels * 2 if self.depth == depth_parent else n_out_channels
             else:
-                self.conv_down = self.downsample(n_out_channels, n_out_channels)
+                n_out_down = n_out_channels
 
+            n_in_conv_dec = 2 * n_out_channels if not self.double_down else n_out_conv_enc
+            n_out_conv_dec = n_out_channels if not self.double_down else n_in_conv_enc
+
+            n_in_up = 2 * n_out_channels if not self.double_down else n_out_down
+            n_out_up = n_out_channels if not self.double_down else n_in_down
+            
             self.sub_2conv_more = self.block(
-                n_in_channels,
-                n_out_channels,
+                n_in_conv_enc,
+                n_out_conv_enc,
                 groups=groups,
             )
-            self.sub_2conv_less = self.block(
-                2 * n_out_channels,
-                n_out_channels,
-                groups=groups,
-            )
-            self.convt = self.upsample(2 * n_out_channels, n_out_channels)
 
-            recurse_n_in = 2 * n_out_channels if self.double_down else n_out_channels
+            self.conv_down = self.downsample(n_in_down, n_out_down)
+            self.convt = self.upsample(n_in_up, n_out_up)
+
+            self.sub_2conv_less = self.block(
+                n_in_conv_dec,
+                n_out_conv_dec,
+                groups=groups,
+            )
+
+            if self.double_down and self.depth == depth_parent:
+                recurse_n_in = 2 * n_out_channels
+            else:
+                recurse_n_in = n_out_channels
+
             self.sub_u = _Net_recurse(
                 recurse_n_in,
                 mult_chan=2,
@@ -236,7 +266,6 @@ class _Net_recurse(nn.Module):
             )
 
     def forward(self, x):
-        import pdb; pdb.set_trace()
         if self.depth == 0:
             return self.sub_2conv_more(x)
         else:  # depth > 0
@@ -248,7 +277,10 @@ class _Net_recurse(nn.Module):
             x_convt = self.convt(x_sub_u)
             x_bn1 = self.bn1(x_convt)
             x_relu1 = self.relu1(x_bn1)
-            x_cat = torch.cat((x_2conv_more, x_relu1), 1)  # concatenate
+            if self.double_down:
+                x_cat = x_2conv_more + x_relu1
+            else:
+                x_cat = torch.cat((x_2conv_more, x_relu1), 1)
             x_2conv_less = self.sub_2conv_less(x_cat)
         return x_2conv_less
 
@@ -413,7 +445,14 @@ class PlainBaselineBlock(nn.Module):
         super().__init__()
         norm_fn = norm_fn or nn.Identity
         chan_attn = chan_attn or nn.Identity
-        activation_fn = activation_fn or nn.ReLU
+        # activation_fn = activation_fn or nn.ReLU
+
+        if activation_fn is not None:
+            self.activ1 = act_inplace(get_act(activation_fn))
+            self.activ2 = act_inplace(get_act(activation_fn))
+        else:
+            self.activ1 = nn.ReLU()
+            self.activ2 = nn.ReLU()
 
         if groups is not None:
             groups = 1 if n_in < groups else groups
@@ -427,9 +466,6 @@ class PlainBaselineBlock(nn.Module):
         self.conv1 = nn.Conv3d(n_in, n_dw, kernel_size=1, padding=0, stride=1, groups=1, bias=True)
         self.conv2 = nn.Conv3d(in_channels=n_dw, out_channels=n_dw, kernel_size=3, padding=1, stride=1, groups=n_dw, bias=True)
         self.conv3 = nn.Conv3d(in_channels=n_dw, out_channels=n_in, kernel_size=1, padding=0, stride=1, groups=1, bias=True)
-
-        self.activ1 = act_inplace(activation_fn)
-        self.activ2 = act_inplace(activation_fn)
 
         if chan_attn == "ca":
             self.ca = nn.Sequential(
