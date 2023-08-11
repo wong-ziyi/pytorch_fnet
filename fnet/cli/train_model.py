@@ -112,6 +112,7 @@ def main(args: Optional[argparse.Namespace] = None):
     log_training_options(vars(args))
     path_model = os.path.join(args.path_save_dir, "model.p")
     model = fnet.models.load_or_init_model(path_model, args.path_json)
+    print(model.net)
 
     inp_shape = tuple([1] + train_options["bpds_kwargs"]["patch_shape"])
     macs, params = get_model_complexity_info(model.net, inp_shape, verbose=False, print_per_layer_stat=False)
@@ -171,6 +172,7 @@ def main(args: Optional[argparse.Namespace] = None):
             logger.info(f"Loss log saved to: {path_losses_csv}")
             logger.info(f"Model saved to: {path_model}")
             logger.info(f"Elapsed time: {time.time() - time_start:.1f} s")
+        
         if ((idx_iter + 1) in args.iter_checkpoint) or ((idx_iter + 1) % args.interval_checkpoint == 0):
             path_checkpoint = os.path.join(args.path_save_dir, "checkpoints", "model_{:06d}.p".format(idx_iter + 1))
             model.save(path_checkpoint)

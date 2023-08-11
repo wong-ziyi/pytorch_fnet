@@ -39,6 +39,22 @@ def get_act(act_str):
         raise ValueError("activation must be one of: 'relu', 'elu', 'selu', 'silu', 'gelu'")
 
 
+def get_norm(norm_str):
+    if norm_str == "batch":
+        return nn.BatchNorm3d
+    elif norm_str == "instance":
+        return nn.InstanceNorm3d
+    elif norm_str == "layer":
+        return nn.LayerNorm
+    elif norm_str == "group":
+        return nn.GroupNorm
+    elif norm_str == "null":
+        return None
+    elif norm_str == "identity":
+        return nn.Identity
+    else:
+        raise ValueError("norm must be 'batch' or 'instance' or 'group'")
+
 
 class Net(nn.Module):
     def __init__(
@@ -53,6 +69,7 @@ class Net(nn.Module):
         double_down=False,
         activation="relu",
         norm="batch",
+        order="cna",
         groups=None,
         block=None,
         res_block=False,
@@ -69,30 +86,17 @@ class Net(nn.Module):
         self.double_down = double_down
         self.groups = groups
         self.res_block = res_block
-
-        if norm == "batch":
-            self.norm = nn.BatchNorm3d
-        elif norm == "instance":
-            self.norm = nn.InstanceNorm3d
-        elif norm == "layer":
-            self.norm = nn.LayerNorm
-        elif norm == "group" and groups is not None:
-            self.norm = nn.GroupNorm
-        elif norm == "null":
-            self.norm = None
-        else:
-            raise ValueError("norm must be 'batch' or 'instance' or 'group'")
+        self.order = order
 
         self.activation = get_act(activation)
+        self.norm = get_norm(norm)
 
         if block == "plain":
-            subnet_mult_chan = 2
             self.block = partial(PlainBaselineBlock, **default(block_kwargs, {}))
             self.mid_block = partial(PlainBaselineBlock, **default(block_kwargs, {}))
         else:
-            subnet_mult_chan = self.mult_chan
-            self.block = partial(SubNet2Conv, activation_fn=self.activation, norm_fn=self.norm, res_block=self.res_block)
-            self.mid_block = partial(DilatedBottleneck, activation_fn=self.activation, norm_fn=self.norm, depth=self.dilate)
+            self.block = partial(SubNet2Conv, activation_fn=self.activation, norm_fn=self.norm, order=self.order, groups=self.groups, res_block=self.res_block)
+            self.mid_block = partial(DilatedBottleneck, activation_fn=self.activation, norm_fn=self.norm, order=self.order, groups=self.groups, depth=self.dilate)
 
         if upsample == "pixel_shuffle":
             self.upsample = partial(PixelShuffleUpsample, scale_factor=2, activation_fn=self.activation)
@@ -201,7 +205,6 @@ class _Net_recurse(nn.Module):
             self.sub_2conv_more = self.mid_block(
                 n_in_conv,
                 n_out_conv,
-                groups=groups,
             )
 
         elif depth > 0:
@@ -233,7 +236,6 @@ class _Net_recurse(nn.Module):
             self.sub_2conv_more = self.block(
                 n_in_conv_enc,
                 n_out_conv_enc,
-                groups=groups,
             )
 
             self.conv_down = self.downsample(n_in_down, n_out_down)
@@ -242,7 +244,6 @@ class _Net_recurse(nn.Module):
             self.sub_2conv_less = self.block(
                 n_in_conv_dec,
                 n_out_conv_dec,
-                groups=groups,
             )
 
             if self.double_down and self.depth == depth_parent:
@@ -286,16 +287,17 @@ class _Net_recurse(nn.Module):
 
 
 class SubNet2Conv(nn.Module):
-    def __init__(self, n_in, n_out, activation_fn=None, norm_fn=None, groups=None, res_block=False):
+    def __init__(self, n_in, n_out, activation_fn=None, norm_fn=None, order="cna", groups=None, res_block=False):
         super().__init__()
         self.res_block = res_block
+        self.order = order
 
         if groups is not None:
             groups = 1 if n_in < groups else groups
-            self.bn1 = norm_fn(groups, n_out)
+            self.bn1 = norm_fn(groups, n_out) if order.find('n') > order.find('c') else norm_fn(groups, n_in)
             self.bn2 = norm_fn(groups, n_out)
         else:
-            self.bn1 = norm_fn(n_out)
+            self.bn1 = norm_fn(n_out) if order.find('n') > order.find('c') else norm_fn(n_in)
             self.bn2 = norm_fn(n_out)
 
         self.conv1 = nn.Conv3d(n_in, n_out, kernel_size=3, padding=1)
@@ -310,9 +312,15 @@ class SubNet2Conv(nn.Module):
                 self.gamma = nn.Parameter(torch.zeros((1, n_out, 1, 1, 1)), requires_grad=True)
 
     def forward(self, x):
-        h = self.conv1(x)
-        h = self.bn1(h)
-        h = self.relu1(h)
+
+        h = x
+        for o in self.order:
+            if o == "c":
+                h = self.conv1(h)
+            elif o == "n":
+                h = self.bn1(h)
+            elif o == "a":
+                h = self.relu1(h)
 
         # learned skip connection over first convolution
         if self.res_block == "regress":
@@ -324,9 +332,14 @@ class SubNet2Conv(nn.Module):
         else:
             y = h
 
-        h = self.conv2(y)
-        h = self.bn2(h)
-        h = self.relu2(h)
+        h = y
+        for o in self.order:
+            if o == "c":
+                h = self.conv2(h)
+            elif o == "n":
+                h = self.bn2(h)
+            elif o == "a":
+                h = self.relu2(h)
 
         if not self.res_block:
             y = h
@@ -344,22 +357,27 @@ class SubNet2Conv(nn.Module):
 
 
 class DilatedBottleneck(nn.Module):
-    def __init__(self, n_in, n_out, depth=4, activation_fn=None, norm_fn=None, groups=None):
+    def __init__(self, n_in, n_out, depth=4, activation_fn=None, norm_fn=None, order="cna", groups=None):
         super().__init__()
+        self.order = order
 
+        activation = act_inplace(activation_fn)
         if groups is not None:
             groups = 1 if n_in < groups else groups
-            norm = norm_fn(groups, n_out)
+            norm = norm_fn(groups, n_out) if order.find('n') > order.find('c') else norm_fn(groups, n_in)
         else:
-            norm = norm_fn(n_out)
+            norm = norm_fn(n_out) if order.find('n') > order.find('c') else norm_fn(n_in)
 
         for i in range(depth):
             dilate = 2**i
-            model = [
-                nn.Conv3d(n_in, n_out, kernel_size=3, padding=dilate, dilation=dilate),
-                norm,
-                act_inplace(activation),
-            ]
+            model = []
+            for o in order:
+                if o == "c":
+                    model.append(nn.Conv3d(n_in, n_out, kernel_size=3, padding=dilate, dilation=dilate))
+                elif o == "n":
+                    model.append(norm)
+                elif o == "a":
+                    model.append(activation)
             self.add_module(f"bottleneck{i + 1}", nn.Sequential(*model))
             if i == 0:
                 n_in = n_out
@@ -443,9 +461,7 @@ class CrossEmbedLayer3D(nn.Module):
 class PlainBaselineBlock(nn.Module):
     def __init__(self, n_in, n_out, dw_expand=1, ffn_expand=2, chan_attn=None, activation_fn=None, norm_fn=None, groups=None):
         super().__init__()
-        norm_fn = norm_fn or nn.Identity
-        chan_attn = chan_attn or nn.Identity
-        # activation_fn = activation_fn or nn.ReLU
+        norm_fn = default(norm_fn, "identity")
 
         if activation_fn is not None:
             self.activ1 = act_inplace(get_act(activation_fn))
@@ -456,11 +472,11 @@ class PlainBaselineBlock(nn.Module):
 
         if groups is not None:
             groups = 1 if n_in < groups else groups
-            self.norm1 = norm_fn(groups, n_out)
-            self.norm2 = norm_fn(groups, n_out)
+            self.norm1 = get_norm(norm_fn)(groups, n_out)
+            self.norm2 = get_norm(norm_fn)(groups, n_out)
         else:
-            self.norm1 = norm_fn(n_out)
-            self.norm2 = norm_fn(n_out)
+            self.norm1 = get_norm(norm_fn)(n_out)
+            self.norm2 = get_norm(norm_fn)(n_out)
 
         n_dw = n_in * dw_expand
         self.conv1 = nn.Conv3d(n_in, n_dw, kernel_size=1, padding=0, stride=1, groups=1, bias=True)
