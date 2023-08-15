@@ -56,6 +56,26 @@ def get_norm(norm_str):
         raise ValueError("norm must be 'batch' or 'instance' or 'group'")
 
 
+def get_ca(chan_attn, n_ch):
+    if chan_attn == "ca":
+        return nn.Sequential(
+            nn.AdaptiveAvgPool3d(1),
+            nn.Conv3d(in_channels=n_ch, out_channels=n_ch // 2, kernel_size=1, padding=0, stride=1, groups=1, bias=True),
+            nn.ReLU(inplace=True),
+            nn.Conv3d(in_channels=n_ch // 2, out_channels=n_ch, kernel_size=1, padding=0, stride=1, groups=1, bias=True),
+            nn.Sigmoid()
+        )
+    else:
+        return nn.Identity()
+
+
+def repeat_block(n_repeat, block, n_in, n_out):
+    repeated_block = [block(n_in, n_out)]
+    for _ in range(n_repeat - 1):
+        repeated_block.append(block(n_out, n_out))
+    return nn.Sequential(*repeated_block)
+
+
 class Net(nn.Module):
     def __init__(
         self,
@@ -70,8 +90,10 @@ class Net(nn.Module):
         activation="relu",
         norm="batch",
         order="cna",
+        chan_attn=None,
         groups=None,
         block=None,
+        mid_block=None,
         res_block=False,
         init_embed=None,
         init_kernel_size=3,
@@ -91,12 +113,23 @@ class Net(nn.Module):
         self.activation = get_act(activation)
         self.norm = get_norm(norm)
 
+        if chan_attn == "ca" or (res_block and "ca" in res_block):
+            self.chan_attn = partial(get_ca, "ca")
+        else:
+            self.chan_attn = None
+
         if block == "plain":
             self.block = partial(PlainBaselineBlock, **default(block_kwargs, {}))
             self.mid_block = partial(PlainBaselineBlock, **default(block_kwargs, {}))
         else:
-            self.block = partial(SubNet2Conv, activation_fn=self.activation, norm_fn=self.norm, order=self.order, groups=self.groups, res_block=self.res_block)
-            self.mid_block = partial(DilatedBottleneck, activation_fn=self.activation, norm_fn=self.norm, order=self.order, groups=self.groups, depth=self.dilate)
+            self.block = partial(SubNet2Conv, activation_fn=self.activation, norm_fn=self.norm, order=self.order, chan_attn=self.chan_attn, groups=self.groups, res_block=self.res_block)
+            if mid_block == "dilated":
+                self.mid_block = partial(DilatedBottleneck, activation_fn=self.activation, norm_fn=self.norm, order=self.order, chan_attn=self.chan_attn, groups=self.groups, depth=self.dilate)
+            elif len(mid_block) == 2 and mid_block[0] == "x":
+                single_block = partial(SubNet2Conv, activation_fn=self.activation, norm_fn=self.norm, order=self.order, chan_attn=self.chan_attn, groups=self.groups, res_block=self.res_block)
+                self.mid_block = partial(repeat_block, int(mid_block[1]), single_block)
+            else:
+                self.mid_block = partial(SubNet2Conv, activation_fn=self.activation, norm_fn=self.norm, order=self.order, chan_attn=self.chan_attn, groups=self.groups, res_block=self.res_block)
 
         if upsample == "pixel_shuffle":
             self.upsample = partial(PixelShuffleUpsample, scale_factor=2, activation_fn=self.activation)
@@ -287,7 +320,7 @@ class _Net_recurse(nn.Module):
 
 
 class SubNet2Conv(nn.Module):
-    def __init__(self, n_in, n_out, activation_fn=None, norm_fn=None, order="cna", groups=None, res_block=False):
+    def __init__(self, n_in, n_out, activation_fn=None, norm_fn=None, order="cna", chan_attn=None, groups=None, res_block=False):
         super().__init__()
         self.res_block = res_block
         self.order = order
@@ -310,6 +343,9 @@ class SubNet2Conv(nn.Module):
             if res_block == "regress":
                 self.beta = nn.Parameter(torch.zeros((1, n_out, 1, 1, 1)), requires_grad=True)
                 self.gamma = nn.Parameter(torch.zeros((1, n_out, 1, 1, 1)), requires_grad=True)
+            if "ca" in self.res_block:
+                self.ca1 = chan_attn(n_out)
+                self.ca2 = chan_attn(n_out)
 
     def forward(self, x):
 
@@ -328,6 +364,8 @@ class SubNet2Conv(nn.Module):
         # skip connection over first convolution
         elif self.res_block == "x2":
             y = self.res_conv(x) + h
+        elif self.res_block == "x2ca":
+            y = self.ca1(self.res_conv(x)) + h
         # covers both no skip connection and classic skip connection
         else:
             y = h
@@ -349,6 +387,8 @@ class SubNet2Conv(nn.Module):
         # skip connection over second convolution
         elif self.res_block == "x2":
             y = y + h
+        elif self.res_block == "x2ca":
+            y = self.ca2(y) + h
         # classic skip connection over both convolutions
         else:
             y = self.res_conv(x) + h
@@ -357,7 +397,7 @@ class SubNet2Conv(nn.Module):
 
 
 class DilatedBottleneck(nn.Module):
-    def __init__(self, n_in, n_out, depth=4, activation_fn=None, norm_fn=None, order="cna", groups=None):
+    def __init__(self, n_in, n_out, depth=4, activation_fn=None, norm_fn=None, order="cna", chan_attn=None, groups=None):
         super().__init__()
         self.order = order
 
@@ -483,16 +523,7 @@ class PlainBaselineBlock(nn.Module):
         self.conv2 = nn.Conv3d(in_channels=n_dw, out_channels=n_dw, kernel_size=3, padding=1, stride=1, groups=n_dw, bias=True)
         self.conv3 = nn.Conv3d(in_channels=n_dw, out_channels=n_in, kernel_size=1, padding=0, stride=1, groups=1, bias=True)
 
-        if chan_attn == "ca":
-            self.ca = nn.Sequential(
-                nn.AdaptiveAvgPool3d(1),
-                nn.Conv3d(in_channels=n_dw, out_channels=n_dw // 2, kernel_size=1, padding=0, stride=1, groups=1, bias=True),
-                nn.ReLU(inplace=True),
-                nn.Conv3d(in_channels=n_dw // 2, out_channels=n_dw, kernel_size=1, padding=0, stride=1, groups=1, bias=True),
-                nn.Sigmoid()
-            )
-        else:
-            self.ca = nn.Identity()
+        self.ca = get_ca(chan_attn, n_dw)
         
         n_ffn = n_in * ffn_expand
         self.conv4 = nn.Conv3d(in_channels=n_in, out_channels=n_ffn, kernel_size=1, padding=0, stride=1, groups=1, bias=True)
