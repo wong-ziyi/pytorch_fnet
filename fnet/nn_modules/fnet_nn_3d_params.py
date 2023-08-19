@@ -16,7 +16,7 @@ def default(val, d):
 
 
 def act_inplace(act):
-    if act == nn.GELU or act == nn.Identity:
+    if act == nn.GELU or act == nn.Identity or act == SimpleGate:
         return act()
     else:
         return act(inplace=True)
@@ -35,6 +35,10 @@ def get_act(act_str):
         return nn.GELU
     elif act_str == "null":
         return None
+    elif act_str == "simplegate":
+        return SimpleGate
+    elif act_str == "extgate":
+        return ExtendedGate
     else:
         raise ValueError("activation must be one of: 'relu', 'elu', 'selu', 'silu', 'gelu'")
 
@@ -113,7 +117,7 @@ class Net(nn.Module):
         self.activation = get_act(activation)
         self.norm = get_norm(norm)
 
-        if chan_attn == "ca" or (res_block and "ca" in res_block):
+        if chan_attn == "ca" or (res_block and type(res_block) is not bool and "ca" in res_block):
             self.chan_attn = partial(get_ca, "ca")
         else:
             self.chan_attn = None
@@ -123,13 +127,18 @@ class Net(nn.Module):
             self.mid_block = partial(PlainBaselineBlock, **default(block_kwargs, {}))
         else:
             self.block = partial(SubNet2Conv, activation_fn=self.activation, norm_fn=self.norm, order=self.order, chan_attn=self.chan_attn, groups=self.groups, res_block=self.res_block)
-            if mid_block == "dilated":
-                self.mid_block = partial(DilatedBottleneck, activation_fn=self.activation, norm_fn=self.norm, order=self.order, chan_attn=self.chan_attn, groups=self.groups, depth=self.dilate)
-            elif len(mid_block) == 2 and mid_block[0] == "x":
-                single_block = partial(SubNet2Conv, activation_fn=self.activation, norm_fn=self.norm, order=self.order, chan_attn=self.chan_attn, groups=self.groups, res_block=self.res_block)
-                self.mid_block = partial(repeat_block, int(mid_block[1]), single_block)
+            if mid_block is not None:
+                if mid_block == "dilated":
+                    self.mid_block = partial(DilatedBottleneck, activation_fn=self.activation, norm_fn=self.norm, order=self.order, chan_attn=self.chan_attn, groups=self.groups, depth=self.dilate)
+                elif len(mid_block) == 2 and mid_block[0] == "x":
+                    single_block = partial(SubNet2Conv, activation_fn=self.activation, norm_fn=self.norm, order=self.order, chan_attn=self.chan_attn, groups=self.groups, res_block=self.res_block)
+                    self.mid_block = partial(repeat_block, int(mid_block[1]), single_block)
+                else:
+                    raise ValueError("midblock must be 'dilated' or 'x[Y]', where Y is the number of blocks")
             else:
                 self.mid_block = partial(SubNet2Conv, activation_fn=self.activation, norm_fn=self.norm, order=self.order, chan_attn=self.chan_attn, groups=self.groups, res_block=self.res_block)
+                # # uncomment for predictions in 'configs/preprocessed' that by default used dilated bottleneck
+                # self.mid_block = partial(DilatedBottleneck, activation_fn=self.activation, norm_fn=self.norm, order=self.order, chan_attn=self.chan_attn, groups=self.groups, depth=self.dilate)
 
         if upsample == "pixel_shuffle":
             self.upsample = partial(PixelShuffleUpsample, scale_factor=2, activation_fn=self.activation)
@@ -248,9 +257,6 @@ class _Net_recurse(nn.Module):
             else:
                 self.bn0, self.bn1 = self.norm(n_out_channels), self.norm(n_out_channels)
 
-            self.relu0 = act_inplace(self.activation)
-            self.relu1 = act_inplace(self.activation)
-
             n_in_conv_enc = n_in_channels
             n_out_conv_enc = n_out_channels if not self.double_down else n_in_channels
 
@@ -283,6 +289,9 @@ class _Net_recurse(nn.Module):
                 recurse_n_in = 2 * n_out_channels
             else:
                 recurse_n_in = n_out_channels
+
+            self.relu0 = self.activation(n_out_down) if self.activation==ExtendedGate else act_inplace(self.activation)
+            self.relu1 = self.activation(n_out_up) if self.activation==ExtendedGate else act_inplace(self.activation)
 
             self.sub_u = _Net_recurse(
                 recurse_n_in,
@@ -333,17 +342,22 @@ class SubNet2Conv(nn.Module):
             self.bn1 = norm_fn(n_out) if order.find('n') > order.find('c') else norm_fn(n_in)
             self.bn2 = norm_fn(n_out)
 
+        if activation_fn == ExtendedGate:
+            self.relu1 = activation_fn(n_out) if order.find('a') > order.find('c') else activation_fn(n_in)
+            self.relu2 = activation_fn(n_out)
+        else:
+            self.relu1 = act_inplace(activation_fn)
+            self.relu2 = act_inplace(activation_fn)
+
         self.conv1 = nn.Conv3d(n_in, n_out, kernel_size=3, padding=1)
-        self.relu1 = act_inplace(activation_fn)
         self.conv2 = nn.Conv3d(n_out, n_out, kernel_size=3, padding=1)
-        self.relu2 = act_inplace(activation_fn)
 
         if res_block:
             self.res_conv = nn.Conv3d(n_in, n_out, 1) if n_in != n_out else nn.Identity()
             if res_block == "regress":
                 self.beta = nn.Parameter(torch.zeros((1, n_out, 1, 1, 1)), requires_grad=True)
                 self.gamma = nn.Parameter(torch.zeros((1, n_out, 1, 1, 1)), requires_grad=True)
-            if "ca" in self.res_block:
+            if type(res_block) is not bool and "ca" in self.res_block:
                 self.ca1 = chan_attn(n_out)
                 self.ca2 = chan_attn(n_out)
 
@@ -401,12 +415,18 @@ class DilatedBottleneck(nn.Module):
         super().__init__()
         self.order = order
 
-        activation = act_inplace(activation_fn)
-        if groups is not None:
-            groups = 1 if n_in < groups else groups
-            norm = norm_fn(groups, n_out) if order.find('n') > order.find('c') else norm_fn(groups, n_in)
-        else:
-            norm = norm_fn(n_out) if order.find('n') > order.find('c') else norm_fn(n_in)
+        def mid_act(activation_fn, n_in, n_out, order):
+            if activation_fn == ExtendedGate:
+                return activation_fn(n_out) if order.find('a') > order.find('c') else activation_fn(n_in)
+            else:
+                return act_inplace(activation_fn)
+            
+        def mid_norm(norm_fn, n_in, n_out, order, groups):
+            if groups is not None:
+                groups = 1 if n_in < groups else groups
+                return norm_fn(groups, n_out) if order.find('n') > order.find('c') else norm_fn(groups, n_in)
+            else:
+                return norm_fn(n_out) if order.find('n') > order.find('c') else norm_fn(n_in)
 
         for i in range(depth):
             dilate = 2**i
@@ -415,9 +435,9 @@ class DilatedBottleneck(nn.Module):
                 if o == "c":
                     model.append(nn.Conv3d(n_in, n_out, kernel_size=3, padding=dilate, dilation=dilate))
                 elif o == "n":
-                    model.append(norm)
+                    model.append(mid_norm(norm_fn, n_in, n_out, order, groups))
                 elif o == "a":
-                    model.append(activation)
+                    model.append(mid_act(activation_fn, n_in, n_out, order))
             self.add_module(f"bottleneck{i + 1}", nn.Sequential(*model))
             if i == 0:
                 n_in = n_out
@@ -550,3 +570,20 @@ class PlainBaselineBlock(nn.Module):
         h = self.conv5(h)
  
         return y + h * self.gamma
+
+
+class SimpleGate(nn.Module):
+    def forward(self, x):
+        x1, x2 = x.chunk(2, dim=1)
+        return x1 * x2
+    
+
+class ExtendedGate(SimpleGate):
+    def __init__(self, n_out):
+        super(ExtendedGate, self).__init__()
+        self.conv = nn.Conv3d(n_out // 2, n_out, kernel_size=1, padding=0, stride=1, groups=1, bias=True)
+
+    def forward(self, x):
+        result = super(ExtendedGate, self).forward(x)
+        result = self.conv(result)
+        return result
