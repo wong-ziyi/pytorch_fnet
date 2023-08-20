@@ -1,7 +1,7 @@
 import torch
 from torch import nn
 
-from einops import rearrange, repeat, reduce
+from einops import repeat
 from einops.layers.torch import Rearrange
 
 from functools import partial

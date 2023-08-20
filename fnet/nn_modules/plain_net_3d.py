@@ -16,7 +16,11 @@ Simple Baselines for Image Restoration
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from test_local_pool import LayerNorm3d, Local_Base
+
+from einops.layers.torch import Rearrange
+
+from fnet.nn_modules.plain_net_utils import LayerNorm3d, Local_Base
+
 
 class BaselineBlock(nn.Module):
     def __init__(self, c, DW_Expand=1, FFN_Expand=2, drop_out_rate=0.):
@@ -114,8 +118,8 @@ class Baseline(nn.Module):
         for num in dec_blk_nums:
             self.ups.append(
                 nn.Sequential(
-                    nn.Conv3d(chan, chan * 2, 1, bias=False),
-                    nn.PixelShuffle(2)
+                    nn.Conv3d(chan, chan * 4, 1, bias=False),
+                    Rearrange("b (c r s p) f h w -> b c (f p) (h r) (w s)", p=2, r=2, s=2)
                 )
             )
             chan = chan // 2
@@ -128,7 +132,7 @@ class Baseline(nn.Module):
         self.padder_size = 2 ** len(self.encoders)
 
     def forward(self, inp):
-        B, C, H, W = inp.shape
+        B, C, D, H, W = inp.shape
         inp = self.check_image_size(inp)
 
         x = self.intro(inp)
@@ -150,14 +154,16 @@ class Baseline(nn.Module):
         x = self.ending(x)
         x = x + inp
 
-        return x[:, :, :H, :W]
+        return x[:, :, :D, :H, :W]
 
     def check_image_size(self, x):
-        _, _, h, w = x.size()
+        _, _, d, h, w = x.size()
+        mod_pad_d = (self.padder_size - d % self.padder_size) % self.padder_size
         mod_pad_h = (self.padder_size - h % self.padder_size) % self.padder_size
         mod_pad_w = (self.padder_size - w % self.padder_size) % self.padder_size
-        x = F.pad(x, (0, mod_pad_w, 0, mod_pad_h))
+        x = F.pad(x, (0, mod_pad_w, 0, mod_pad_h, 0, mod_pad_d))
         return x
+
 
 class BaselineLocal(Local_Base, Baseline):
     def __init__(self, *args, train_size=(1, 32, 64, 64), fast_imp=False, **kwargs):
@@ -171,31 +177,24 @@ class BaselineLocal(Local_Base, Baseline):
         with torch.no_grad():
             self.convert(base_size=base_size, train_size=train_size, fast_imp=fast_imp)
 
-if __name__ == '__main__':
-    img_channel = 3
-    width = 32
 
-    dw_expand = 1
-    ffn_expand = 2
-
-    # enc_blks = [2, 2, 4, 8]
-    # middle_blk_num = 12
-    # dec_blks = [2, 2, 2, 2]
-
-    enc_blks = [1, 1, 1, 28]
-    middle_blk_num = 1
-    dec_blks = [1, 1, 1, 1]
-
-    net = Baseline(img_channel=img_channel, width=width, middle_blk_num=middle_blk_num,
-                 enc_blk_nums=enc_blks, dec_blk_nums=dec_blks, dw_expand=dw_expand, ffn_expand=ffn_expand)
-
-    inp_shape = (32, 64, 64)
-
-    from ptflops import get_model_complexity_info
-
-    macs, params = get_model_complexity_info(net, inp_shape, verbose=False, print_per_layer_stat=False)
-
-    params = float(params[:-3])
-    macs = float(macs[:-4])
-
-    print(macs, params)
+class BaselineNet(Baseline):
+    def __init__(
+            self,
+            img_channel=1,
+            width=32,
+            dw_expand=1,
+            ffn_expand=2,
+            enc_blks=[1, 1, 1, 28],
+            middle_blk_num = 1,
+            dec_blks=[1, 1, 1, 1]
+    ):
+        super().__init__(
+            img_channel=img_channel,
+            width=width,
+            middle_blk_num=middle_blk_num,
+            enc_blk_nums=enc_blks,
+            dec_blk_nums=dec_blks,
+            dw_expand=dw_expand,
+            ffn_expand=ffn_expand
+        )

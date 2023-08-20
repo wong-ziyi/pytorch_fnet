@@ -9,9 +9,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
+from einops import repeat
+from einops.layers.torch import Rearrange
 
 
 class AvgPool3d(nn.Module):
@@ -159,7 +158,7 @@ class LayerNormFunction(torch.autograd.Function):
 
         mean_gy = (g * y).mean(dim=[1, 2, 3, 4], keepdim=True)
         gx = 1.0 / torch.sqrt(var + eps) * (g - y * mean_gy - mean_g)
-        return gx, (grad_output * y).sum(dim=[1, 2, 3, 4]), grad_output.sum(dim=[1, 2, 3, 4]), None
+        return gx, (grad_output * y).sum(dim=[0, 2, 3, 4]), grad_output.sum(dim=[0, 2, 3, 4]), None
 
 
 class LayerNorm3d(nn.Module):
