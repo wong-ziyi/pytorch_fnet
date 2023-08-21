@@ -587,3 +587,16 @@ class ExtendedGate(SimpleGate):
         result = super(ExtendedGate, self).forward(x)
         result = self.conv(result)
         return result
+    
+
+class GRN3D(nn.Module):
+    def __init__(self, channels):
+        super().__init__()
+        self.gamma = nn.Parameter(torch.zeros(1, channels, 1, 1, 1))
+        self.beta = nn.Parameter(torch.zeros(1, channels, 1, 1, 1))
+
+    def forward(self, x):
+        Gx = torch.norm(x, p=2, dim=(2, 3, 4), keepdim=True)
+        Nx = Gx / (Gx.mean(dim=1, keepdim=True) + 1e-6)
+        return self.gamma * (x * Nx) + self.beta + x
+

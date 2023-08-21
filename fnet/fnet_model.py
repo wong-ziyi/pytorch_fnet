@@ -31,13 +31,13 @@ def _weights_init(m):
         m.bias.data.fill_(0)
 
 
-def get_per_param_options(module, wd):
+def get_per_param_options(module, decay_bias):
     """Returns list of per parameter group options.
 
     Applies the specified weight decay (wd) to parameters except parameters
     within batch norm layers and bias parameters.
     """
-    if wd == 0:
+    if decay_bias:
         return module.parameters()
     with_decay = list()
     without_decay = list()
@@ -53,6 +53,8 @@ def get_per_param_options(module, wd):
                 with_decay.append(param)
             elif "bias" in name_param:
                 without_decay.append(param)
+            else:
+                raise ValueError(f"Unexpected parameter: {name_param}")
     # Check that no parameters were missed or duplicated
     n_param_module = len(list(module.parameters()))
     n_param_lists = len(with_decay) + len(without_decay)
@@ -80,8 +82,10 @@ class Model:
         lr=0.001,
         nn_class="fnet.nn_modules.fnet_nn_3d.Net",
         nn_kwargs={},
+        optimizer=None,
         scheduler=None,
         weight_decay=0,
+        decay_bias=False,
         gpu_ids=-1,
     ):
         self.betas = betas
@@ -92,13 +96,14 @@ class Model:
         self.lr = lr
         self.nn_class = nn_class
         self.nn_kwargs = nn_kwargs
+        self.optimizer = optimizer
         self.scheduler = scheduler
         self.weight_decay = weight_decay
+        self.decay_bias = decay_bias
 
         self.count_iter = 0
         self.best_loss_val = float("inf")
         self.device = torch.device("cuda", self.gpu_ids[0]) if self.gpu_ids[0] >= 0 else torch.device("cpu")
-        self.optimizer = None
         self._init_model()
         self.fnet_model_kwargs, self.fnet_model_posargs = get_args()
         self.fnet_model_kwargs.pop("self")
@@ -108,11 +113,25 @@ class Model:
         if self.init_weights:
             self.net.apply(_weights_init)
         self.net.to(self.device)
-        self.optimizer = torch.optim.Adam(
-            get_per_param_options(self.net, wd=self.weight_decay),
-            lr=self.lr,
-            betas=self.betas,
-        )
+        
+        if self.optimizer is None or self.optimizer == "Adam":
+            self.optimizer = torch.optim.Adam(
+                get_per_param_options(self.net, decay_bias=self.decay_bias),
+                lr=self.lr,
+                betas=self.betas,
+                weight_decay=self.weight_decay,
+            )
+        elif self.optimizer == "AdamW":
+            self.optimizer = torch.optim.AdamW(
+                get_per_param_options(self.net, decay_bias=self.decay_bias),
+                lr=self.lr,
+                betas=self.betas,
+                weight_decay=self.weight_decay,
+            )
+        else:
+            raise NotImplementedError
+        logger.info(f"Created optimizer: {self.optimizer}")
+
         if self.scheduler is not None:
             if self.scheduler[0] == "snapshot":
                 period = self.scheduler[1]
@@ -123,8 +142,15 @@ class Model:
             elif self.scheduler[0] == "step":
                 step_size = self.scheduler[1]
                 self.scheduler = torch.optim.lr_scheduler.StepLR(self.optimizer, step_size)
+            elif self.scheduler[0] == "CosineAnnealingLR":
+                self.scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+                    self.optimizer,
+                    **self.scheduler[1],
+                )
             else:
                 raise NotImplementedError
+            logger.info(f"Created scheduler: {self.scheduler}")
+
 
     def __str__(self):
         out_str = [
