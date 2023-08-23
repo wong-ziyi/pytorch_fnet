@@ -2,6 +2,7 @@
 from typing import Optional
 
 import tifffile
+import numpy as np
 
 import torch
 from torch.nn import functional as F
@@ -450,3 +451,19 @@ class PSFWMSEDiceLoss(torch.nn.Module):
             dice_loss = self.dice(self.tune_sigm(y_hat_batch), weight_map_batch)
 
         return (1 - self.gamma) * dice_loss + self.gamma * mse_loss
+
+
+class PSNRLoss(torch.nn.Module):
+
+    def __init__(self, loss_weight=1.0):
+        super(PSNRLoss, self).__init__()
+        self.loss_weight = loss_weight
+        self.scale = 10 / np.log(10)
+
+    def forward(self, pred, target):
+        assert len(pred.size()) == 5 and pred.size(1) == 1
+        assert len(target.size()) == 5 and target.size(1) == 1
+
+        mse = ((pred - target) ** 2).mean(dim=(1, 2, 3, 4))
+        psnr_loss = self.scale * torch.log(mse + 1e-8)
+        return self.loss_weight * psnr_loss.mean()
