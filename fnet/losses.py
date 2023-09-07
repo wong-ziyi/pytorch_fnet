@@ -454,7 +454,6 @@ class PSFWMSEDiceLoss(torch.nn.Module):
 
 
 class PSNRLoss(torch.nn.Module):
-
     def __init__(self, loss_weight=1.0):
         super(PSNRLoss, self).__init__()
         self.loss_weight = loss_weight

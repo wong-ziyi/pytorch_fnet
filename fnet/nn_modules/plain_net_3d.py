@@ -2,7 +2,7 @@
 # Copyright (c) 2022 megvii-model. All Rights Reserved.
 # ------------------------------------------------------------------------
 
-'''
+"""
 Simple Baselines for Image Restoration
 
 @article{chen2022simple,
@@ -11,7 +11,7 @@ Simple Baselines for Image Restoration
   journal={arXiv preprint arXiv:2204.04676},
   year={2022}
 }
-'''
+"""
 
 import torch
 import torch.nn as nn
@@ -23,37 +23,66 @@ from fnet.nn_modules.plain_net_utils import LayerNorm3d, Local_Base
 
 
 class BaselineBlock(nn.Module):
-    def __init__(self, c, DW_Expand=1, FFN_Expand=2, drop_out_rate=0.):
+    def __init__(self, c, DW_Expand=1, FFN_Expand=2, drop_out_rate=0.0):
         super().__init__()
         dw_channel = c * DW_Expand
-        self.conv1 = nn.Conv3d(in_channels=c, out_channels=dw_channel, kernel_size=1, padding=0, stride=1, groups=1, bias=True)
-        self.conv2 = nn.Conv3d(in_channels=dw_channel, out_channels=dw_channel, kernel_size=3, padding=1, stride=1, groups=dw_channel,
-                               bias=True)
-        self.conv3 = nn.Conv3d(in_channels=dw_channel, out_channels=c, kernel_size=1, padding=0, stride=1, groups=1, bias=True)
-        
+        self.conv1 = nn.Conv3d(
+            in_channels=c, out_channels=dw_channel, kernel_size=1, padding=0, stride=1, groups=1, bias=True
+        )
+        self.conv2 = nn.Conv3d(
+            in_channels=dw_channel,
+            out_channels=dw_channel,
+            kernel_size=3,
+            padding=1,
+            stride=1,
+            groups=dw_channel,
+            bias=True,
+        )
+        self.conv3 = nn.Conv3d(
+            in_channels=dw_channel, out_channels=c, kernel_size=1, padding=0, stride=1, groups=1, bias=True
+        )
+
         # Channel Attention
         self.se = nn.Sequential(
             nn.AdaptiveAvgPool3d(1),
-            nn.Conv3d(in_channels=dw_channel, out_channels=dw_channel // 2, kernel_size=1, padding=0, stride=1,
-                      groups=1, bias=True),
+            nn.Conv3d(
+                in_channels=dw_channel,
+                out_channels=dw_channel // 2,
+                kernel_size=1,
+                padding=0,
+                stride=1,
+                groups=1,
+                bias=True,
+            ),
             nn.ReLU(inplace=True),
-            nn.Conv3d(in_channels=dw_channel // 2, out_channels=dw_channel, kernel_size=1, padding=0, stride=1,
-                      groups=1, bias=True),
-            nn.Sigmoid()
+            nn.Conv3d(
+                in_channels=dw_channel // 2,
+                out_channels=dw_channel,
+                kernel_size=1,
+                padding=0,
+                stride=1,
+                groups=1,
+                bias=True,
+            ),
+            nn.Sigmoid(),
         )
 
         # GELU
         self.gelu = nn.GELU()
 
         ffn_channel = FFN_Expand * c
-        self.conv4 = nn.Conv3d(in_channels=c, out_channels=ffn_channel, kernel_size=1, padding=0, stride=1, groups=1, bias=True)
-        self.conv5 = nn.Conv3d(in_channels=ffn_channel, out_channels=c, kernel_size=1, padding=0, stride=1, groups=1, bias=True)
+        self.conv4 = nn.Conv3d(
+            in_channels=c, out_channels=ffn_channel, kernel_size=1, padding=0, stride=1, groups=1, bias=True
+        )
+        self.conv5 = nn.Conv3d(
+            in_channels=ffn_channel, out_channels=c, kernel_size=1, padding=0, stride=1, groups=1, bias=True
+        )
 
         self.norm1 = LayerNorm3d(c)
         self.norm2 = LayerNorm3d(c)
 
-        self.dropout1 = nn.Dropout(drop_out_rate) if drop_out_rate > 0. else nn.Identity()
-        self.dropout2 = nn.Dropout(drop_out_rate) if drop_out_rate > 0. else nn.Identity()
+        self.dropout1 = nn.Dropout(drop_out_rate) if drop_out_rate > 0.0 else nn.Identity()
+        self.dropout2 = nn.Dropout(drop_out_rate) if drop_out_rate > 0.0 else nn.Identity()
 
         self.beta = nn.Parameter(torch.zeros((1, c, 1, 1, 1)), requires_grad=True)
         self.gamma = nn.Parameter(torch.zeros((1, c, 1, 1, 1)), requires_grad=True)
@@ -83,14 +112,17 @@ class BaselineBlock(nn.Module):
 
 
 class Baseline(nn.Module):
-
-    def __init__(self, img_channel=3, width=16, middle_blk_num=1, enc_blk_nums=[], dec_blk_nums=[], dw_expand=1, ffn_expand=2):
+    def __init__(
+        self, img_channel=3, width=16, middle_blk_num=1, enc_blk_nums=[], dec_blk_nums=[], dw_expand=1, ffn_expand=2
+    ):
         super().__init__()
 
-        self.intro = nn.Conv3d(in_channels=img_channel, out_channels=width, kernel_size=3, padding=1, stride=1, groups=1,
-                              bias=True)
-        self.ending = nn.Conv3d(in_channels=width, out_channels=img_channel, kernel_size=3, padding=1, stride=1, groups=1,
-                              bias=True)
+        self.intro = nn.Conv3d(
+            in_channels=img_channel, out_channels=width, kernel_size=3, padding=1, stride=1, groups=1, bias=True
+        )
+        self.ending = nn.Conv3d(
+            in_channels=width, out_channels=img_channel, kernel_size=3, padding=1, stride=1, groups=1, bias=True
+        )
 
         self.encoders = nn.ModuleList()
         self.decoders = nn.ModuleList()
@@ -100,34 +132,21 @@ class Baseline(nn.Module):
 
         chan = width
         for num in enc_blk_nums:
-            self.encoders.append(
-                nn.Sequential(
-                    *[BaselineBlock(chan, dw_expand, ffn_expand) for _ in range(num)]
-                )
-            )
-            self.downs.append(
-                nn.Conv3d(chan, 2*chan, 2, 2)
-            )
+            self.encoders.append(nn.Sequential(*[BaselineBlock(chan, dw_expand, ffn_expand) for _ in range(num)]))
+            self.downs.append(nn.Conv3d(chan, 2 * chan, 2, 2))
             chan = chan * 2
 
-        self.middle_blks = \
-            nn.Sequential(
-                *[BaselineBlock(chan, dw_expand, ffn_expand) for _ in range(middle_blk_num)]
-            )
+        self.middle_blks = nn.Sequential(*[BaselineBlock(chan, dw_expand, ffn_expand) for _ in range(middle_blk_num)])
 
         for num in dec_blk_nums:
             self.ups.append(
                 nn.Sequential(
                     nn.Conv3d(chan, chan * 4, 1, bias=False),
-                    Rearrange("b (c r s p) f h w -> b c (f p) (h r) (w s)", p=2, r=2, s=2)
+                    Rearrange("b (c r s p) f h w -> b c (f p) (h r) (w s)", p=2, r=2, s=2),
                 )
             )
             chan = chan // 2
-            self.decoders.append(
-                nn.Sequential(
-                    *[BaselineBlock(chan, dw_expand, ffn_expand) for _ in range(num)]
-                )
-            )
+            self.decoders.append(nn.Sequential(*[BaselineBlock(chan, dw_expand, ffn_expand) for _ in range(num)]))
 
         self.padder_size = 2 ** len(self.encoders)
 
@@ -180,21 +199,21 @@ class BaselineLocal(Local_Base, Baseline):
 
 class BaselineNet(Baseline):
     def __init__(
-            self,
-            img_channel=1,
-            width=32,
-            dw_expand=1,
-            ffn_expand=2,
-            enc_blks=[1, 1, 1, 28],
-            middle_blk_num = 1,
-            dec_blks=[1, 1, 1, 1]
+        self,
+        img_channel=1,
+        width=32,
+        dw_expand=1,
+        ffn_expand=2,
+        enc_blks=[1, 1, 1, 28],
+        middle_blks=1,
+        dec_blks=[1, 1, 1, 1],
     ):
         super().__init__(
             img_channel=img_channel,
             width=width,
-            middle_blk_num=middle_blk_num,
+            middle_blk_num=middle_blks,
             enc_blk_nums=enc_blks,
             dec_blk_nums=dec_blks,
             dw_expand=dw_expand,
-            ffn_expand=ffn_expand
+            ffn_expand=ffn_expand,
         )

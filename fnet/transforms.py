@@ -456,8 +456,8 @@ def norm_foreground(
 
     ar = img_as_float32(ar) if not np.issubdtype(ar.dtype, np.floating) else ar
     thresh = get_threshold_otsu(downscale_and_filter(ar, downscale_factor=1, filter_size=5))
-    foreground = ar[ar>thresh]
-    
+    foreground = ar[ar > thresh]
+
     if center == "thresh":
         ar = (ar - thresh) / foreground.std()
     elif center == "mean":
