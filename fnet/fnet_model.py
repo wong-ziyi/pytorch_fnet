@@ -31,13 +31,13 @@ def _weights_init(m):
         m.bias.data.fill_(0)
 
 
-def get_per_param_options(module, decay_bias):
+def get_per_param_options(module, weight_decay, decay_bias):
     """Returns list of per parameter group options.
 
     Applies the specified weight decay (wd) to parameters except parameters
     within batch norm layers and bias parameters.
     """
-    if decay_bias:
+    if weight_decay == 0 or decay_bias:
         return module.parameters()
     with_decay = list()
     without_decay = list()
@@ -63,7 +63,7 @@ def get_per_param_options(module, decay_bias):
     assert n_param_module == n_param_lists
     assert n_elem_module == n_elem_lists
     per_param_options = [
-        {"params": with_decay, "weight_decay": wd},
+        {"params": with_decay, "weight_decay": weight_decay},
         {"params": without_decay, "weight_decay": 0.0},
     ]
     return per_param_options
@@ -113,17 +113,17 @@ class Model:
         if self.init_weights:
             self.net.apply(_weights_init)
         self.net.to(self.device)
-        
+
         if self.optimizer is None or self.optimizer == "Adam":
             self.optimizer = torch.optim.Adam(
-                get_per_param_options(self.net, decay_bias=self.decay_bias),
+                get_per_param_options(self.net, weight_decay=self.weight_decay, decay_bias=self.decay_bias),
                 lr=self.lr,
                 betas=self.betas,
                 weight_decay=self.weight_decay,
             )
         elif self.optimizer == "AdamW":
             self.optimizer = torch.optim.AdamW(
-                get_per_param_options(self.net, decay_bias=self.decay_bias),
+                get_per_param_options(self.net, weight_decay=self.weight_decay, decay_bias=self.decay_bias),
                 lr=self.lr,
                 betas=self.betas,
                 weight_decay=self.weight_decay,
@@ -150,7 +150,6 @@ class Model:
             else:
                 raise NotImplementedError
             logger.info(f"Created scheduler: {self.scheduler}")
-
 
     def __str__(self):
         out_str = [
