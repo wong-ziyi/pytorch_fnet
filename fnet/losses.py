@@ -466,3 +466,65 @@ class PSNRLoss(torch.nn.Module):
         mse = ((pred - target) ** 2).mean(dim=(1, 2, 3, 4))
         psnr_loss = self.scale * torch.log(mse + 1e-8)
         return self.loss_weight * psnr_loss.mean()
+
+
+class FRC3DLoss(torch.nn.Module):
+    def __init__(self, loss_weight=1.0):
+        super(FRC3DLoss, self).__init__()
+
+    def radial_mask_3d(self, r, cx=32, cy=64, cz=64, delta=1):
+        sz, sy, sx = torch.meshgrid(torch.arange(0, cz), torch.arange(0, cy), torch.arange(0, cx))
+        ind = (sx - cx // 2)**2 + (sy - cy // 2)**2 + (sz - cz // 2)**2
+        ind1 = ind <= ((r + delta)**2)
+        ind2 = ind > (r**2)
+        return ind1 * ind2
+
+
+    def get_radial_masks_3d(self, image_shape=(32, 64, 64)):
+        freq_nyq = torch.tensor([image_shape[0] // 2, image_shape[1] // 2, image_shape[2] // 2]).float()
+        radii = torch.arange(1, freq_nyq.min().int() + 1).reshape(-1, 1)
+
+        radial_masks = [self.radial_mask_3d(radius.item(), cx=image_shape[0], cy=image_shape[1], cz=image_shape[2]) for radius in radii]
+        radial_masks = torch.stack(radial_masks, axis=0)  # Shape: (num_radii, cz, cy, cx)
+        radial_masks = radial_masks.permute(0, 3, 2, 1)  # Shape: (num_radii, cx, cy, cz)
+        radial_masks = radial_masks.unsqueeze(1)  # Shape: (num_radii, 1, cx, cy, cz)
+
+        spatial_freq = radii.float() / freq_nyq.min()
+        spatial_freq = spatial_freq / spatial_freq.max()
+
+        return radial_masks, spatial_freq
+
+
+    def fft_rn_img(self, img, rn):
+        img = img.to(dtype=torch.complex64)
+        fft_img = torch.fft.fftn(img, dim=[-3, -2, -1])
+        fft_img = torch.fft.fftshift(fft_img, dim=[-3, -2, -1])
+        return fft_img.unsqueeze(1) * rn.unsqueeze(0)
+    
+
+    def fourier_ring_correlation(self, image1, image2, rn, spatial_freq):
+        rn = rn.to(torch.device('cuda'), dtype=torch.complex64)
+        t1 = self.fft_rn_img(image1, rn)
+        t2 = self.fft_rn_img(image2, rn)
+
+        c1 = torch.real(torch.sum(t1 * torch.conj(t2), dim=[-3, -2, -1]))
+        c2 = torch.sum(torch.abs(t1) ** 2, dim=[-3, -2, -1])
+        c3 = torch.sum(torch.abs(t2) ** 2, dim=[-3, -2, -1])
+
+        frc = c1 / torch.sqrt(c2 * c3)        
+        frc[torch.isinf(frc)] = 0
+        frc[torch.isnan(frc)] = 0
+
+        t = spatial_freq.cuda()
+        y = frc.mean(0)
+        riemann_sum = torch.sum((t[1:] - t[:-1]) * (y[:-1] + y[1:]) / 2.0, dim=0)
+        return riemann_sum
+
+
+    def forward(self, pred, target):
+        assert len(pred.size()) == 5 and pred.size(1) == 1
+        assert len(target.size()) == 5 and target.size(1) == 1
+
+        radial_masks, spatial_freq = self.get_radial_masks_3d(image_shape=pred.shape[-3:])
+        frc = self.fourier_ring_correlation(pred, target, radial_masks, spatial_freq)
+        return 1 - frc
