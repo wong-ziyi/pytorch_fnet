@@ -92,6 +92,7 @@ class SubNet2Conv(torch.nn.Module):
         self.conv2 = torch.nn.Conv3d(n_out, n_out, kernel_size=3, padding=1)
         self.bn2 = torch.nn.BatchNorm3d(n_out)
         self.relu2 = torch.nn.ReLU(inplace=True)
+        #self.dropout = torch.nn.Dropout(0.1)
 
     def forward(self, x):
         x = self.conv1(x)
@@ -100,6 +101,7 @@ class SubNet2Conv(torch.nn.Module):
         x = self.conv2(x)
         x = self.bn2(x)
         x = self.relu2(x)
+        #x = self.dropout(x)
         return x
 
     

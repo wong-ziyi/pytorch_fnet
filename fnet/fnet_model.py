@@ -199,8 +199,8 @@ class Model:
 
     def load_state(self, state: dict, no_optim: bool = False):
         self.count_iter = state["count_iter"]
-        if "best_loss_val" in state:
-            self.best_loss_val = state["best_loss_val"]
+        #if "best_loss_val" in state:
+        #    self.best_loss_val = state["best_loss_val"]
         self.net.load_state_dict(state["nn_state"])
         if no_optim:
             self.optimizer = None
@@ -230,8 +230,6 @@ class Model:
             Loss as determined by self.criterion.
 
         """
-        if self.scheduler is not None:
-            self.scheduler.step()
         self.net.train()
         x_batch = x_batch.to(dtype=torch.float32, device=self.device)
         y_batch = y_batch.to(dtype=torch.float32, device=self.device)
@@ -248,6 +246,8 @@ class Model:
         loss = self.criterion(*args)
         loss.backward()
         self.optimizer.step()
+        if self.scheduler is not None:
+            self.scheduler.step()
         self.count_iter += 1
         return loss.item()
 
@@ -287,6 +287,7 @@ class Model:
             Batch of model predictions.
 
         """
+        x_batch = np.asarray(x_batch, dtype=np.float32)
         x_batch = torch.tensor(x_batch, dtype=torch.float32, device=self.device)
 
         if len(self.gpu_ids) > 1:
@@ -303,7 +304,7 @@ class Model:
         return y_hat_batch
 
     def predict(
-        self, x: Union[torch.Tensor, np.ndarray], tta: bool = False
+        self, x: Union[torch.Tensor, np.ndarray], tta: bool = True
     ) -> torch.Tensor:
         """Performs model prediction on a single example.
 

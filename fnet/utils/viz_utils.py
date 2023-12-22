@@ -79,7 +79,7 @@ def plot_loss(
             df_train_rmean = df_train.rolling(window=window_train).mean()
             _plot_df(df_train_rmean, ax, model_label, colors, linestyle="-")
         if val:
-            cols_val = [col for col in df.columns if col.lower().endswith("_val")]
+            cols_val = [col for col in df.columns if col.lower().endswith("loss_val")]
             df_val = df.loc[:, cols_val].dropna(axis=1, thresh=1).dropna()
             df_val_rmean = df_val.rolling(window=window_val).mean()
             _plot_df(df_val_rmean, ax, model_label, colors, linestyle="--")
@@ -88,7 +88,16 @@ def plot_loss(
     ax.set_ylim([ymin, ymax])
     ax.set_xlabel("Training iterations")
     ax.set_ylabel("Rolling mean squared error")
-    ax.legend()
+
+    ax2=ax.twinx()   
+    cols_metric_val = [col for col in df.columns if col.lower().endswith("metric_val")]
+    df_metric_val = df.loc[:, cols_metric_val].dropna(axis=1, thresh=1).dropna()
+    df_metric_val_rmean = df_metric_val.rolling(window=window_val).mean()
+    _plot_df(df_metric_val_rmean, ax2, model_label, colors, linestyle="--")
+    ax2.set_ylabel("Rolling mean squared error")
+    ax.legend(loc='upper right')
+    ax2.legend(loc='upper left')
+
     if path_save is not None:
         fig.savefig(path_save, bbox_inches="tight")
         logger.info(f"Saved: {path_save}")

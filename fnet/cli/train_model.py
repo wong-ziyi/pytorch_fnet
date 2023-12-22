@@ -74,7 +74,7 @@ def get_bpds_val(args: argparse.Namespace) -> Optional[BufferedPatchDataset]:
         raise ValueError("Dataset function should be Callable")
     ds = ds_fn(**args.dataset_val_kwargs)
     bpds_kwargs["buffer_size"] = min(4, len(ds))
-    bpds_kwargs["buffer_switch_interval"] = -1
+    bpds_kwargs["buffer_switch_interval"] = 50
     return BufferedPatchDataset(dataset=ds, **bpds_kwargs)
 
 
@@ -153,6 +153,8 @@ def main(args: Optional[argparse.Namespace] = None):
                 )
                 model.save(path_best_loss_val)
                 logger.info(f"Saved best val loss model: {path_best_loss_val}")
+            if abs(idx_iter - 0.9*args.n_iter)<2:
+                model.best_loss_val = float("inf")
 
         fnetlogger.add(
             {"num_iter": idx_iter + 1, "loss_train": loss_train, "loss_val": loss_val, "metric_val": metric_val}
@@ -172,6 +174,13 @@ def main(args: Optional[argparse.Namespace] = None):
             logger.info(f"Loss log saved to: {path_losses_csv}")
             logger.info(f"Model saved to: {path_model}")
             logger.info(f"Elapsed time: {time.time() - time_start:.1f} s")
+            print(
+                f'iter: {fnetlogger.data["num_iter"][-1]:6d} | '
+                f'loss_train: {fnetlogger.data["loss_train"][-1]:.6f} | '
+                f'loss_val: {fnetlogger.data["loss_val"][-1]:.6f} | '
+                f'metric_val: {fnetlogger.data["metric_val"][-1]:.6f} |'
+                f'best_loss_val: {model.best_loss_val:.6f}'
+            )
         if ((idx_iter + 1) in args.iter_checkpoint) or (
             (idx_iter + 1) % args.interval_checkpoint == 0
         ):

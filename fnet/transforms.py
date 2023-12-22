@@ -394,9 +394,9 @@ def norm_min_max(
        Nomralized array, dtype = float32
 
     """
-    if ar.ndim != 3:
+    if ar.ndim < 3:
         raise ValueError('Input array must be 3d')
-    if ar.shape[0] < 32:
+    if ar.shape[1] < 32:
         raise ValueError(
             'Input array must be at least length 32 in first dimension'
         )
@@ -428,9 +428,9 @@ def z_score(
        Nomralized array, dtype = float32
 
     """
-    if ar.ndim != 3:
+    if ar.ndim < 3:
         raise ValueError('Input array must be 3d')
-    if ar.shape[0] < 32:
+    if ar.shape[1] < 32:
         raise ValueError(
             'Input array must be at least length 32 in first dimension'
         )
