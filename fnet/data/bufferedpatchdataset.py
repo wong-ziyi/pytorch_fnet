@@ -34,7 +34,7 @@ class BufferedPatchDataset:
     def __init__(
         self,
         dataset: collections.abc.Sequence,
-        patch_shape: Sequence[int] = (32, 64, 64),
+        patch_shape: Sequence[int] = (16, 64, 64),
         buffer_size: int = 1,
         buffer_switch_interval: int = -1,
         shuffle_images: bool = True,

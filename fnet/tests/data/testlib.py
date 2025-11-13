@@ -28,8 +28,8 @@ def create_tif_data(
         data_x = np.random.randint(128, size=shape, dtype=np.uint8)
         data_y = data_x + idx
 
-        tifffile.imsave(path_x, data_x, compress=2)
-        tifffile.imsave(path_y, data_y, compress=2)
+        tifffile.imwrite(path_x, data_x, compression="zlib")
+        tifffile.imwrite(path_y, data_y, compression="zlib")
 
         records.append({"dummy_id": idx, "path_signal": path_x, "path_target": path_y})
         if weights:
@@ -39,7 +39,7 @@ def create_tif_data(
             slicey = tuple(slicey)
             data_weight_map[slicey] = 1
             path_weight_map = path_data / f"{idx:02}_weight_map.tif"
-            tifffile.imsave(path_weight_map, data_weight_map, compress=2)
+            tifffile.imwrite(path_weight_map, data_weight_map, compression="zlib")
             records[-1]["path_weight_map"] = path_weight_map
 
     path_csv = path_root / "dummy.csv"
@@ -70,8 +70,8 @@ def create_multichtiff_data(
             {
                 "dummy_id": idx,
                 "path_tiff": path_x,
-                "channel_signal": list(np.arange(0, n_ch_in)),
-                "channel_target": list(np.arange(0, n_ch_out) + n_ch_in),
+                "channel_signal": list(range(0, n_ch_in)),
+                "channel_target": list(range(n_ch_in, n_ch_in + n_ch_out)),
             }
         )
 

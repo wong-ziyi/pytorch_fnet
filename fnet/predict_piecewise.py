@@ -1,4 +1,7 @@
-from scipy.signal import triang
+try:
+    from scipy.signal import triang
+except ImportError:
+    from scipy.signal.windows import triang
 from typing import Union, List
 import numpy as np
 import torch

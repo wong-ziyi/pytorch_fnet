@@ -8,6 +8,7 @@ import torch
 
 import fnet
 from fnet.fnet_model import Model
+from fnet.nn_modules import fnet_nn_3d
 
 SOME_PARAM_TEST_VAL = 123
 
@@ -66,7 +67,7 @@ def test_apply_on_single_zstack(tmp_path):
     yhat_ch1 = model.apply_on_single_zstack(ar_in, inputCh=1)
     ar_in = ar_in[1,]
     path_input_save = tmp_path / "input_save.tiff"
-    tifffile.imsave(str(path_input_save), ar_in, compress=2)
+    tifffile.imwrite(str(path_input_save), ar_in, compression="zlib")
     yhat = model.apply_on_single_zstack(ar_in)
     yhat_file = model.apply_on_single_zstack(filename=path_input_save)
     assert np.issubdtype(yhat.dtype, np.floating)
@@ -86,6 +87,13 @@ def test_apply_on_single_zstack(tmp_path):
     yhat_cutoff = model.apply_on_single_zstack(ar_in, cutoff=cutoff)
     assert np.issubdtype(yhat_cutoff.dtype, np.unsignedinteger)
     assert np.array_equal(yhat_cutoff, yhat_exp)
+
+
+def test_unet_accepts_odd_depth():
+    net = fnet_nn_3d.Net(depth=3)
+    x = torch.rand(1, 1, 13, 32, 32)
+    y = net(x)
+    assert y.shape == x.shape
 
 
 def test_train_on_batch():
@@ -134,16 +142,17 @@ def test_test_on_batch():
     y_batch = x_batch * 0.666 + 0.42
 
     # Model weights should remain the same so loss should not change
-    loss_0 = model.test_on_batch(x_batch, y_batch)
-    loss_1 = model.test_on_batch(x_batch, y_batch)
+    loss_0, metric_0 = model.test_on_batch(x_batch, y_batch)
+    loss_1, metric_1 = model.test_on_batch(x_batch, y_batch)
     npt.assert_approx_equal(loss_1 - loss_0, 0.0)
+    npt.assert_approx_equal(metric_1 - metric_0, 0.0)
 
     # Loss should remain the same with uniform weight map
-    loss_weight_uniform = model.test_on_batch(
+    loss_weight_uniform, _ = model.test_on_batch(
         x_batch, y_batch, torch.ones(shape_batch) / np.prod(shape_item)
     )
     npt.assert_almost_equal(loss_weight_uniform - loss_0, 0.0)
 
     # Loss should be zero with all-zero weight map
-    loss_weight_zero = model.test_on_batch(x_batch, y_batch, torch.zeros(shape_batch))
+    loss_weight_zero, _ = model.test_on_batch(x_batch, y_batch, torch.zeros(shape_batch))
     npt.assert_almost_equal(loss_weight_zero, 0.0)

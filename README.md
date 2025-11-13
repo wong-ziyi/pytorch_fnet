@@ -39,6 +39,10 @@ pip install -e .[dev]
 pip install .[examples]
 ```
 
+### Vendored dependency notice
+
+The repository now ships a minimal copy of `aicsimageio/` in-tree. Python 3.13 builds of the upstream project currently require binary wheels that are not yet available, which prevented `fnet` from installing in the default development environment. The bundled module only implements the subset of the API exercised by our datasets (loading `CZYX` volumes and writing simple OME-TIFF fixtures) so that contributors can `pip install -e .` without waiting for third-party wheels. When upstream wheels become available again we can drop the shim, but until then please avoid installing PyPI’s `aicsimageio` side-by-side as it will shadow the packaged stub.
+
 ## Demo on Canned AICS Data
 This will download some images from our [Integrated Cell Quilt repository](https://open.quiltdata.com/b/allencell/tree/aics/pipeline_integrated_cell/) and start training a model 
 ```shell
@@ -84,6 +88,10 @@ fnet train --json /path/to/train_options.json
 ```
 
 Since this time the json already exists, training should commence.
+
+### Configure model depth for shallow stacks
+
+Projects that use fewer axial slices can now control the 3D U-Net depth through the `model_depth` field in the training options JSON (default `3`). The value is mirrored into `fnet_model_kwargs.nn_kwargs.depth`, so editing either location has the same effect. Ensure that `bpds_kwargs.patch_shape[0]` is less than or equal to the number of z-slices in your data; for 13-slice volumes you can keep the depth at `3` and set the patch depth to `13` so the network receives full-context patches without additional interpolation. The repository ships with an example `examples/prefs.json` that demonstrates this setting—copy it into your experiment directory (or point `fnet train --json` at it) to bootstrap a config that is already aligned with 13-slice stacks.
 
 ## Perform predictions with a trained model
 

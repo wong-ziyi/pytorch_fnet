@@ -25,6 +25,18 @@ import fnet.utils.viz_utils as vu
 
 
 logger = logging.getLogger(__name__)
+DEFAULT_MODEL_DEPTH = 3
+
+
+def _sync_model_depth(options: Dict) -> None:
+    """Ensure model_depth and nn_kwargs stay in sync."""
+    fnet_model_kwargs = options.setdefault("fnet_model_kwargs", {})
+    nn_kwargs = fnet_model_kwargs.setdefault("nn_kwargs", {})
+    depth = options.get("model_depth")
+    if depth is None:
+        depth = nn_kwargs.get("depth", DEFAULT_MODEL_DEPTH)
+    nn_kwargs["depth"] = depth
+    options["model_depth"] = depth
 
 
 def log_training_options(options: Dict) -> None:
@@ -104,6 +116,7 @@ def main(args: Optional[argparse.Namespace] = None):
     with open(args.path_json, "r") as fi:
         train_options = json.load(fi)
 
+    _sync_model_depth(train_options)
     args.__dict__.update(train_options)
     add_logging_file_handler(Path(args.path_save_dir, "train_model.log"))
     logger.info(f"Started training at: {datetime.datetime.now()}")
@@ -167,6 +180,14 @@ def main(args: Optional[argparse.Namespace] = None):
         if do_save:
             model.save(path_model)
             fnetlogger.to_csv(path_losses_csv)
+            loss_val_latest = fnetlogger.data["loss_val"][-1]
+            metric_val_latest = fnetlogger.data["metric_val"][-1]
+            loss_val_str = (
+                f"{loss_val_latest:.6f}" if loss_val_latest is not None else "n/a"
+            )
+            metric_val_str = (
+                f"{metric_val_latest:.6f}" if metric_val_latest is not None else "n/a"
+            )
             logger.info(
                 "BufferedPatchDataset buffer history: %s",
                 bpds_train.get_buffer_history(),
@@ -177,8 +198,8 @@ def main(args: Optional[argparse.Namespace] = None):
             print(
                 f'iter: {fnetlogger.data["num_iter"][-1]:6d} | '
                 f'loss_train: {fnetlogger.data["loss_train"][-1]:.6f} | '
-                f'loss_val: {fnetlogger.data["loss_val"][-1]:.6f} | '
-                f'metric_val: {fnetlogger.data["metric_val"][-1]:.6f} |'
+                f'loss_val: {loss_val_str} | '
+                f'metric_val: {metric_val_str} |'
                 f'best_loss_val: {model.best_loss_val:.6f}'
             )
         if ((idx_iter + 1) in args.iter_checkpoint) or (
@@ -214,24 +235,36 @@ def train_model(
     seed: Optional[int] = None,
     json: Optional[str] = None,
     gpu_ids: Optional[List[int]] = None,
+    model_depth: Optional[int] = None,
 ):
     """Python API for training."""
 
+    if fnet_model_kwargs is None:
+        fnet_model_kwargs = {
+            "betas": [0.9, 0.999],
+            "criterion_class": "fnet.losses.WeightedMSE",
+            "init_weights": False,
+            "lr": 0.001,
+            "nn_class": "fnet.nn_modules.fnet_nn_3d.Net",
+            "nn_kwargs": {"depth": DEFAULT_MODEL_DEPTH},
+            "scheduler": None,
+        }
+    else:
+        fnet_model_kwargs = copy.deepcopy(fnet_model_kwargs)
+    nn_kwargs = fnet_model_kwargs.setdefault("nn_kwargs", {})
+    if model_depth is None:
+        model_depth = nn_kwargs.get("depth", DEFAULT_MODEL_DEPTH)
+    nn_kwargs["depth"] = model_depth
+
+    default_patch_depth = 2 ** (model_depth + 1)
     bpds_kwargs = bpds_kwargs or {
         "buffer_size": 16,
         "buffer_switch_interval": 2800,  # every 100 updates
-        "patch_shape": [32, 64, 64],
+        "patch_shape": [default_patch_depth, 64, 64],
     }
+    bpds_kwargs.setdefault("patch_shape", [default_patch_depth, 64, 64])
     dataset_train_kwargs = dataset_train_kwargs or {}
     dataset_val_kwargs = dataset_val_kwargs or {}
-    fnet_model_kwargs = fnet_model_kwargs or {
-        "betas": [0.9, 0.999],
-        "criterion_class": "fnet.losses.WeightedMSE",
-        "init_weights": False,
-        "lr": 0.001,
-        "nn_class": "fnet.nn_modules.fnet_nn_3d.Net",
-        "scheduler": None,
-    }
     iter_checkpoint = iter_checkpoint or []
     gpu_ids = gpu_ids or [0]
 

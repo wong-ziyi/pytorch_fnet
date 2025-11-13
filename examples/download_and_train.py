@@ -106,6 +106,11 @@ save_default_train_options(prefs_save_path)
 with open(prefs_save_path, "r") as fp:
     prefs = json.load(fp)
 
+# ensure model depth preference exists for easy overrides
+prefs["model_depth"] = prefs.get("model_depth", 3)
+prefs.setdefault("fnet_model_kwargs", {}).setdefault("nn_kwargs", {})
+prefs["fnet_model_kwargs"]["nn_kwargs"]["depth"] = prefs["model_depth"]
+
 # takes about 16 hours, go up to 250,000 for full training
 prefs["n_iter"] = args.n_iterations
 prefs["interval_checkpoint"] = args.interval_checkpoint

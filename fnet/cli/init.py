@@ -69,12 +69,13 @@ def save_default_train_options(path_save: Path) -> None:
         Save path for default training options json.
 
     """
+    model_depth = 3
     train_options = {
         "batch_size": 24,
         "bpds_kwargs": {
             "buffer_size": 30,
             "buffer_switch_interval": 2800,  # every 100 updates
-            "patch_shape": [32, 64, 64],
+            "patch_shape": [16, 64, 64],
         },
         "dataset_train": "fnet.data.TiffDataset",
         "dataset_train_kwargs": {
@@ -94,6 +95,7 @@ def save_default_train_options(path_save: Path) -> None:
             "init_weights": False,
             "lr": 0.001,
             "nn_class": "fnet.nn_modules.fnet_nn_3d.Net",
+            "nn_kwargs": {"depth": model_depth},
             "scheduler": None,
         },
         "interval_checkpoint": 50000,
@@ -102,6 +104,7 @@ def save_default_train_options(path_save: Path) -> None:
         "n_iter": 50000,
         "path_save_dir": str(path_save.parent),
         "seed": None,
+        "model_depth": model_depth,
     }
     save_options_json(path_save, train_options)
 

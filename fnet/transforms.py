@@ -355,11 +355,11 @@ def norm_around_center(ar: np.ndarray, z_center: Optional[int] = None):
     """
     if ar.ndim != 3:
         raise ValueError("Input array must be 3d")
-    if ar.shape[0] < 32:
-        raise ValueError("Input array must be at least length 32 in first dimension")
+    if ar.shape[0] < 1:
+        raise ValueError("Input array must be at least length 1 in first dimension")
     if z_center is None:
         z_center = ar.shape[0] // 2
-    chunk_zlen = 32
+    chunk_zlen = min(32, ar.shape[0])
     z_start = z_center - chunk_zlen // 2
     if z_start < 0:
         z_start = 0
@@ -396,10 +396,6 @@ def norm_min_max(
     """
     if ar.ndim < 3:
         raise ValueError('Input array must be 3d')
-    if ar.shape[1] < 32:
-        raise ValueError(
-            'Input array must be at least length 32 in first dimension'
-        )
 
     ar = ar.astype(np.float32)
     norm_min, norm_max = np.percentile(ar, q=q)
@@ -430,10 +426,6 @@ def z_score(
     """
     if ar.ndim < 3:
         raise ValueError('Input array must be 3d')
-    if ar.shape[1] < 32:
-        raise ValueError(
-            'Input array must be at least length 32 in first dimension'
-        )
 
     ar = ar.astype(np.float32)
     ar -= ar.mean()

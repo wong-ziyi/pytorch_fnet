@@ -1,8 +1,38 @@
 import torch
+import torch.nn.functional as F
+
+
+def _match_spatial_dims(source: torch.Tensor, reference: torch.Tensor) -> torch.Tensor:
+    """Pad or crop tensor so its spatial dims match the reference tensor."""
+    if source.shape[2:] == reference.shape[2:]:
+        return source
+    # Pad where the upsampled tensor is smaller than the skip connection.
+    pad = []
+    for dim in range(source.ndim - 1, 1, -1):
+        diff = reference.size(dim) - source.size(dim)
+        if diff > 0:
+            pad_before = diff // 2
+            pad_after = diff - pad_before
+        else:
+            pad_before = pad_after = 0
+        pad.extend([pad_before, pad_after])
+    if any(pad):
+        source = F.pad(source, pad)
+    # Crop any excess voxels (can happen when dims were odd deeper in the net).
+    slices = [slice(None), slice(None)]
+    for dim in range(2, source.ndim):
+        diff = source.size(dim) - reference.size(dim)
+        if diff > 0:
+            start = diff // 2
+            end = start + reference.size(dim)
+            slices.append(slice(start, end))
+        else:
+            slices.append(slice(None))
+    return source[tuple(slices)]
 
 
 class Net(torch.nn.Module):
-    def __init__(self, depth=4, mult_chan=32, dilate=1, in_channels=1, out_channels=1):
+    def __init__(self, depth=3, mult_chan=32, dilate=1, in_channels=1, out_channels=1):
         super().__init__()
         self.depth = depth
         self.mult_chan = mult_chan
@@ -69,7 +99,6 @@ class _Net_recurse(torch.nn.Module):
         if self.depth == 0:
             return self.sub_2conv_more(x)
         else:  # depth > 0
-            # number of slices must match that in training data or 32??
             x_2conv_more = self.sub_2conv_more(x)
             x_conv_down = self.conv_down(x_2conv_more)
             x_bn0 = self.bn0(x_conv_down)
@@ -78,6 +107,7 @@ class _Net_recurse(torch.nn.Module):
             x_convt = self.convt(x_sub_u)
             x_bn1 = self.bn1(x_convt)
             x_relu1 = self.relu1(x_bn1)
+            x_relu1 = _match_spatial_dims(x_relu1, x_2conv_more)
             x_cat = torch.cat((x_2conv_more, x_relu1), 1)  # concatenate
             x_2conv_less = self.sub_2conv_less(x_cat)
         return x_2conv_less

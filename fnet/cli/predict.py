@@ -21,7 +21,17 @@ from fnet.utils.general_utils import files_from_dir
 from fnet.utils.general_utils import retry_if_oserror
 from fnet.utils.general_utils import str_to_object
 
-from pytorch_toolbelt.inference.tiles import ImageSlicer, CudaTileMerger
+try:
+    from pytorch_toolbelt.inference.tiles import ImageSlicer, CudaTileMerger
+except ImportError:  # pytorch-toolbelt>=0.8 dropped CudaTileMerger
+    from pytorch_toolbelt.inference.tiles import ImageSlicer, TileMerger
+
+    class CudaTileMerger(TileMerger):
+        """CPU fallback that mimics the removed CudaTileMerger API."""
+
+        def __init__(self, *args, device: Optional[str] = None, **kwargs):
+            super().__init__(*args, **kwargs)
+
 from pytorch_toolbelt.utils.torch_utils import tensor_from_mask_image, to_numpy
 
 torch.backends.cudnn.enabled = True
@@ -146,8 +156,7 @@ def save_tif(fname: str, ar: np.ndarray, path_root: str) -> str:
         logger.info(f"Created: {path_tif_dir}")
     path_save = os.path.join(path_tif_dir, fname)
     # change compression level to default
-#     tifffile.imsave(path_save, ar, compress=2)
-    tifffile.imsave(path_save, ar)
+    tifffile.imwrite(path_save, ar, compression="zlib")
     logger.info(f"Saved: {path_save}")
     return os.path.relpath(path_save, path_root)
 

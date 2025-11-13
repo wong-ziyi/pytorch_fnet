@@ -1,0 +1,60 @@
+{
+    "batch_size": 16,
+    "bpds_kwargs": {
+        "buffer_size": 16,
+        "buffer_switch_interval": 2800,
+        "patch_shape": [
+            13,
+            64,
+            64
+        ]
+    },
+    "dataset_train": "fnet.data.TiffDataset",
+    "dataset_train_kwargs": {
+        "path_csv": "data/train_manifest.csv",
+        "col_index": "id",
+        "col_signal": "path_signal",
+        "col_target": "path_target",
+        "transform_signal": [
+            "fnet.transforms.normalize"
+        ],
+        "transform_target": [
+            "fnet.transforms.normalize"
+        ]
+    },
+    "dataset_val": "fnet.data.TiffDataset",
+    "dataset_val_kwargs": {
+        "path_csv": "data/val_manifest.csv",
+        "col_index": "id",
+        "col_signal": "path_signal",
+        "col_target": "path_target",
+        "transform_signal": [
+            "fnet.transforms.normalize"
+        ],
+        "transform_target": [
+            "fnet.transforms.normalize"
+        ]
+    },
+    "fnet_model_class": "fnet.fnet_model.Model",
+    "fnet_model_kwargs": {
+        "betas": [
+            0.9,
+            0.999
+        ],
+        "criterion_class": "fnet.losses.WeightedMSE",
+        "init_weights": false,
+        "lr": 0.001,
+        "nn_class": "fnet.nn_modules.fnet_nn_3d.Net",
+        "nn_kwargs": {
+            "depth": 3
+        },
+        "scheduler": null
+    },
+    "interval_checkpoint": 10000,
+    "interval_save": 1000,
+    "iter_checkpoint": [],
+    "model_depth": 3,
+    "n_iter": 50000,
+    "path_save_dir": "model/13slice_demo",
+    "seed": null
+}

@@ -5,13 +5,21 @@ from typing import List, Optional, Union
 import logging
 import os
 
+from pathlib import Path
+
 import matplotlib
 import matplotlib.pyplot as plt
 import pandas as pd
 
 
 logger = logging.getLogger(__name__)
-plt.style.use("seaborn")
+_FALLBACK_STYLE = Path(__file__).with_name("seaborn_fallback.mplstyle")
+for _style in ("seaborn", "seaborn-v0_8", _FALLBACK_STYLE, "default"):
+    try:
+        plt.style.use(str(_style))
+        break
+    except (OSError, FileNotFoundError):
+        continue
 COLORS = matplotlib.rcParams["axes.prop_cycle"].by_key()["color"]
 
 
