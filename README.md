@@ -17,7 +17,7 @@ We recommend installation on Linux and an NVIDIA graphics card with 12+ GB of RA
 ## Installation
 
 - We recommend an environment manager such as [Conda](https://docs.conda.io/en/latest/miniconda.html).
-- Install Python 3.6+ if necessary.
+- Install Python 3.9+ if necessary.
 - All commands listed below assume the bash shell.
 - Clone and install the repo:
 
@@ -38,6 +38,41 @@ pip install -e .[dev]
 ```shell
 pip install .[examples]
 ```
+
+### Copy the current Conda environment to another Linux machine
+
+The working `pytorch_env` Conda environment used to build and test this repo has
+been exported to `env_specs/pytorch_env.yml` (generated via
+`CONDA_OVERRIDE_CUDA=0 conda env export --name pytorch_env --no-builds`). Use the
+commands below to reproduce it on a different Linux workstation.
+
+1. Install [Miniconda/Conda](https://docs.conda.io/en/latest/miniconda.html) on
+   the destination host and clone this repository.
+2. Create the environment from the checked-in specification:
+
+   ```shell
+   cd /path/to/pytorch_fnet
+   conda env create -n pytorch_env --file env_specs/pytorch_env.yml
+   conda activate pytorch_env
+   ```
+
+3. Install the repo in editable mode (includes dev extras) so that Python uses
+   your working copy instead of the PyPI release recorded in the export:
+
+   ```shell
+   pip install -e .[dev]
+   ```
+
+4. Verify the environment before running training or prediction:
+
+   ```shell
+   python -c "import torch, fnet; print('pytorch_env ready')"
+   ```
+
+Re-run `conda env update -n pytorch_env --file env_specs/pytorch_env.yml --prune`
+whenever the specification changes. If you need to refresh the export from this
+machine in the future, activate `pytorch_env` and run the same `conda env export`
+command shown above to overwrite `env_specs/pytorch_env.yml`.
 
 ### Vendored dependency notice
 
